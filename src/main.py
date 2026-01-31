@@ -3,7 +3,11 @@
 import click
 import json
 import logging
+import sys
 from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import AnonymizationTemplate
 from src.zone_anonymizer import ZoneBasedAnonymizer
