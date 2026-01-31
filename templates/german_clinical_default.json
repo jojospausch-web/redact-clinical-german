@@ -1,0 +1,70 @@
+{
+  "template_name": "German-Clinical-Structured-v1",
+  "version": "1.0.0",
+  
+  "zones": {
+    "header": {
+      "page": 1,
+      "y_start": 0,
+      "y_end": 120,
+      "redaction": "full",
+      "preserve_logos": true
+    },
+    "footer": {
+      "pages": "all",
+      "y_start": 750,
+      "y_end": 842,
+      "redaction": "keyword_based",
+      "keywords": ["IBAN", "Bankverbindung", "Sparkasse", "BIC", "Stiftung", "Vorstand"]
+    }
+  },
+  
+  "structured_patterns": {
+    "patient_block": {
+      "pattern": "(Herr|Frau)\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
+      "groups": {
+        "1": "SALUTATION",
+        "2": "LASTNAME",
+        "3": "FIRSTNAME",
+        "4": "BIRTHDATE"
+      }
+    },
+    "case_id": {
+      "pattern": "Pat\\.?-?Nr\\.?:?\\s*([0-9]{6,10})",
+      "type": "CASE_ID"
+    },
+    "address": {
+      "pattern": "([A-ZÄÖÜ][a-zäöüß]+(?:straße|str\\.|weg|platz|allee))\\s+(\\d+[a-z]?),?\\s+(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+)",
+      "type": "ADDRESS"
+    },
+    "doctor_signature": {
+      "context_trigger": "Mit freundlichen Grüßen",
+      "pattern": "(Prof\\.|Dr\\.|PD)\\s+(med\\.\\s+)?([A-ZÄÖÜ][a-zäöüß-]+(?:\\s+[A-ZÄÖÜ][a-zäöüß-]+)+)",
+      "type": "DOCTOR_NAME",
+      "lookahead": 200
+    },
+    "referring_doctor": {
+      "context_trigger": "Zuweiser",
+      "pattern": "Dr\\.\\s+([A-ZÄÖÜ][a-zäöüß-]+)",
+      "type": "REFERRING_DOCTOR"
+    }
+  },
+  
+  "date_handling": {
+    "birthdate": {
+      "pattern": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
+      "action": "shift",
+      "shift_days_range": [-30, 30]
+    },
+    "treatment_dates": {
+      "pattern": "\\b(\\d{2}\\.\\d{2}\\.\\d{4})\\b",
+      "action": "shift_relative"
+    }
+  },
+  
+  "image_pii_patterns": {
+    "case_number": "\\d{6,10}",
+    "name": "^[A-ZÄÖÜ][a-zäöüß]+\\s+[A-ZÄÖÜ][a-zäöüß]+$",
+    "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}"
+  }
+}
