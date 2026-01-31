@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "redact-clinical-german"
+version = "1.0.0"
+description = "Zone-based anonymization system for German clinical doctor letters"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "redact-clinical-german", email = "info@example.com"}
+]
+dependencies = [
+    "PyMuPDF>=1.23.8",
+    "pytesseract>=0.3.10",
+    "Pillow>=10.1.0",
+    "pydantic>=2.5.0",
+    "click>=8.1.0",
+    "python-dateutil>=2.8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+redact-clinical = "src.main:anonymize"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
