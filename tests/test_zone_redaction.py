@@ -50,7 +50,9 @@ class TestSeparatePageZones:
             doc.close()
         
         # Process the PDF
-        temp_output = tempfile.mktemp(suffix='.pdf')
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            temp_output = tmp.name
+        
         stats = anonymizer.anonymize_pdf(temp_input, temp_output)
         
         # Check that zones were redacted (should be 2, not 3, since page 1 is excluded)
@@ -192,7 +194,9 @@ class TestSignatureBlockRedaction:
             doc.save(temp_input)
             doc.close()
         
-        temp_output = tempfile.mktemp(suffix='.pdf')
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            temp_output = tmp.name
+        
         anonymizer.anonymize_pdf(temp_input, temp_output)
         
         # Verify output exists
@@ -233,7 +237,9 @@ class TestSignatureBlockRedaction:
             doc.save(temp_input)
             doc.close()
         
-        temp_output = tempfile.mktemp(suffix='.pdf')
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            temp_output = tmp.name
+        
         anonymizer.anonymize_pdf(temp_input, temp_output)
         
         # Verify output exists
@@ -276,7 +282,9 @@ class TestSignatureBlockRedaction:
             doc.save(temp_input)
             doc.close()
         
-        temp_output = tempfile.mktemp(suffix='.pdf')
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            temp_output = tmp.name
+        
         anonymizer.anonymize_pdf(temp_input, temp_output)
         
         # Verify output exists
