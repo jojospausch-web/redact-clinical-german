@@ -1,6 +1,6 @@
 {
-  "template_name": "German-Clinical-Structured-v1",
-  "version": "1.0.0",
+  "template_name": "German-Clinical-Structured-v2",
+  "version": "2.0.0",
   
   "zones": {
     "header": {
@@ -50,7 +50,48 @@
     }
   },
   
+  "location_anonymization": {
+    "enabled": true,
+    "city_database": "data/cities_de.txt",
+    "facilities_database": "data/medical_facilities_de.json",
+    
+    "context_triggers": {
+      "prepositions": ["in", "aus", "nach", "von", "bei"],
+      "facility_keywords": [
+        "Universitätsklinikum", "Uniklinik", "Klinikum", "Krankenhaus",
+        "Herzzentrum", "Tumorzentrum", "Lungenzentrum", "MVZ", "Charité",
+        "Medizinisches Versorgungszentrum"
+      ],
+      "referral_keywords": ["überwiesen", "Zuweiser", "eingewiesen", "verlegt"]
+    },
+    
+    "location_blacklist": [
+      "UKE",
+      "Charité",
+      "Northeim",
+      "Eppendorf"
+    ],
+    
+    "replacement": "[ORT]",
+    "facility_replacement": "[KLINIK]"
+  },
+  
   "date_handling": {
+    "enabled": true,
+    "shift_days_range": [-30, 30],
+    
+    "german_months": {
+      "full": ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
+      "abbreviated": ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+    },
+    
+    "date_patterns": {
+      "german_full": "\\b(\\d{1,2})\\. ([A-Za-zä]+) (\\d{4})\\b",
+      "german_abbr": "\\b(\\d{1,2})\\. ([A-Za-zä]{3}\\.?) (\\d{4})\\b",
+      "numeric": "\\b(\\d{2})\\.(\\d{2})\\.(\\d{4})\\b",
+      "birthdate": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})"
+    },
+    
     "birthdate": {
       "pattern": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
       "action": "shift",
@@ -68,3 +109,4 @@
     "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}"
   }
 }
+
