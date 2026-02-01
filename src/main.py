@@ -63,7 +63,11 @@ def anonymize_pdf_with_template(
     # Initialize date shifter
     shift_range = (-30, 30)
     if 'birthdate' in config.date_handling:
-        shift_range = config.date_handling['birthdate'].shift_days_range or shift_range
+        birthdate_config = config.date_handling['birthdate']
+        if isinstance(birthdate_config, dict):
+            shift_range = birthdate_config.get('shift_days_range', shift_range)
+        else:
+            shift_range = birthdate_config.shift_days_range or shift_range
     
     date_shifter = DateShifter(shift_days=shift_days, shift_range=shift_range)
     logger.info(f"Date shifter initialized with offset: {date_shifter.get_shift_days()} days")
