@@ -220,6 +220,67 @@ if uploaded_files:
         # Store results in session state
         st.session_state['results'] = results
 
+if uploaded_files:
+    if st.button("🚀 Anonymisierung starten", type="primary"):
+        # Clear previous results
+        st.session_state['results'] = []
+        
+        # Progress tracking
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        results = []
+        total = len(uploaded_files)
+        
+        for idx, uploaded_file in enumerate(uploaded_files):
+            status_text.text(f"Verarbeite {uploaded_file.name} ({idx+1}/{total})...")
+            
+            # Sanitize filename to prevent path traversal attacks
+            safe_filename = re.sub(r'[^\w\s.-]', '_', uploaded_file.name)
+            safe_filename = os.path.basename(safe_filename)  # Remove any path components
+            
+            # Create unique temporary directory for this file
+            temp_dir = tempfile.mkdtemp(prefix='redact_')
+            temp_input = Path(temp_dir) / safe_filename
+            temp_input.write_bytes(uploaded_file.read())
+            
+            # Create temp output directory
+            temp_output_dir = Path(temp_dir) / "output"
+            temp_output_dir.mkdir(parents=True, exist_ok=True)
+            temp_output = temp_output_dir / f"anonymized_{safe_filename}"
+            
+            # Call anonymization
+            try:
+                # shift_days: 0 means random shift (None triggers random behavior in backend)
+                result = anonymize_pdf(
+                    input_path=str(temp_input),
+                    template_path=template_file,
+                    output_path=str(temp_output),
+                    shift_days=shift_days if shift_days != 0 else None,
+                    extract_images=extract_images
+                )
+                
+                results.append({
+                    'original_name': uploaded_file.name,
+                    'anonymized_pdf': result['output_pdf'],
+                    'images': result.get('images', []),
+                    'stats': result.get('stats', {})
+                })
+                
+                logger.info(f"Successfully processed {uploaded_file.name}")
+                
+            except Exception as e:
+                logger.error(f"Error processing {uploaded_file.name}: {e}")
+                st.error(f"❌ Fehler bei {uploaded_file.name}: {str(e)}")
+            
+            # Update progress
+            progress_bar.progress((idx + 1) / total)
+        
+        status_text.text("✅ Fertig!")
+        
+        # Store results in session state
+        st.session_state['results'] = results
+
 # Download section
 if 'results' in st.session_state and st.session_state['results']:
     st.success(f"✅ {len(st.session_state['results'])} Dateien erfolgreich anonymisiert!")
@@ -283,18 +344,13 @@ if not uploaded_files:
     ### 📋 Anleitung
     
     1. **Hochladen**: Wählen Sie eine oder mehrere PDF-Dateien aus
-    2. **Zonen konfigurieren**: Passen Sie Header/Footer-Höhe mit Slidern an
-    3. **Vorschau prüfen**: Sehen Sie die Schwärzungsbereiche (blau/orange)
-    4. **Starten**: Klicken Sie auf "Anonymisierung starten"
-    5. **Herunterladen**: Laden Sie einzelne Dateien oder alle als ZIP herunter
+    2. **Konfigurieren**: Passen Sie die Einstellungen in der Sidebar an
+    3. **Starten**: Klicken Sie auf "Anonymisierung starten"
+    4. **Herunterladen**: Laden Sie einzelne Dateien oder alle als ZIP herunter
     
     ### ✨ Features
     
     - ✅ Mehrere PDFs gleichzeitig hochladen
-    - ✅ **Interaktive Zonen-Anpassung** mit Live-Vorschau
-    - ✅ **Postleitzahlen-Erkennung** (deutsche PLZ)
-    - ✅ Header nur auf Seite 1 oder allen Seiten
-    - ✅ Footer-Keywords konfigurierbar
     - ✅ Batch-Verarbeitung mit Live-Progress
     - ✅ Einzeldownload jeder anonymisierten Datei
     - ✅ ZIP-Download aller Dateien auf einmal

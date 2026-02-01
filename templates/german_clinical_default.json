@@ -47,6 +47,17 @@
       "context_trigger": "Zuweiser",
       "pattern": "Dr\\.\\s+([A-ZÄÖÜ][a-zäöüß-]+)",
       "type": "REFERRING_DOCTOR"
+    },
+    "postal_code_with_city": {
+      "pattern": "(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+(?:dorf|burg|stadt|heim)?)",
+      "groups": {
+        "1": "POSTAL_CODE",
+        "2": "CITY"
+      }
+    },
+    "postal_code_standalone": {
+      "pattern": "(?:PLZ:?\\s*)?(\\d{5})(?!\\d)",
+      "type": "POSTAL_CODE"
     }
   },
   
@@ -106,7 +117,8 @@
   "image_pii_patterns": {
     "case_number": "\\d{6,10}",
     "name": "^[A-ZÄÖÜ][a-zäöüß]+\\s+[A-ZÄÖÜ][a-zäöüß]+$",
-    "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}"
+    "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}",
+    "postal_code": "\\d{5}"
   }
 }
 

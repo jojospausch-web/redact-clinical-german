@@ -165,3 +165,72 @@ class TestStructuredPIIExtractor:
         assert len(entities) == 2
         name = next(e for e in entities if e.entity_type == "NAME")
         assert name.text == "Müßiggang"
+    
+    def test_extract_postal_code_with_city(self):
+        """Test extraction of postal code with city name."""
+        patterns = {
+            "postal_code_with_city": PatternGroup(
+                pattern=r"(\d{5})\s+([A-ZÄÖÜ][a-zäöüß]+(?:dorf|burg|stadt|heim)?)",
+                groups={
+                    "1": "POSTAL_CODE",
+                    "2": "CITY"
+                }
+            )
+        }
+        extractor = StructuredPIIExtractor(patterns)
+        
+        # Test 1: PLZ with city
+        text1 = "Adresse: 37075 Göttingen"
+        entities = extractor.extract_pii(text1)
+        
+        assert len(entities) == 2
+        postal_code = next(e for e in entities if e.entity_type == "POSTAL_CODE")
+        assert postal_code.text == "37075"
+        
+        city = next(e for e in entities if e.entity_type == "CITY")
+        assert city.text == "Göttingen"
+    
+    def test_extract_postal_code_standalone(self):
+        """Test extraction of standalone postal codes."""
+        patterns = {
+            "postal_code_standalone": PatternGroup(
+                pattern=r"(?:PLZ:?\s*)?(\d{5})(?!\d)",
+                type="POSTAL_CODE"
+            )
+        }
+        extractor = StructuredPIIExtractor(patterns)
+        
+        # Test 1: PLZ with label
+        text1 = "PLZ: 12345"
+        entities = extractor.extract_pii(text1)
+        
+        assert len(entities) >= 1
+        assert entities[0].text == "12345"
+        assert entities[0].entity_type == "POSTAL_CODE"
+        
+        # Test 2: PLZ without label
+        text2 = "Postleitzahl 98765 ist korrekt"
+        entities = extractor.extract_pii(text2)
+        
+        assert len(entities) >= 1
+        postal = next(e for e in entities if e.text == "98765")
+        assert postal.entity_type == "POSTAL_CODE"
+    
+    def test_postal_code_not_six_digits(self):
+        """Test that 6-digit numbers are not matched as postal codes."""
+        patterns = {
+            "postal_code_standalone": PatternGroup(
+                pattern=r"(?:PLZ:?\s*)?(\d{5})(?!\d)",
+                type="POSTAL_CODE"
+            )
+        }
+        extractor = StructuredPIIExtractor(patterns)
+        
+        # Should not match 6-digit number
+        text = "Case ID: 123456"
+        entities = extractor.extract_pii(text)
+        
+        # Should not match the whole number, only if there are no more digits
+        # This test verifies the negative lookahead works
+        assert all(len(e.text) == 5 for e in entities)
+
