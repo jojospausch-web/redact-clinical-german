@@ -69,14 +69,22 @@ class TestTemplateLoading:
         assert german_full_config.action == "shift"
         
     def test_template_optional_fields(self):
-        """Test that optional fields are present."""
+        """Test that optional fields are present and valid."""
         template_path = "templates/german_clinical_default.json"
         config = load_and_validate_template(template_path)
         
-        # Check optional fields
+        # Check optional fields exist and are not empty
         assert config.location_anonymization is not None
+        assert isinstance(config.location_anonymization, dict)
+        assert config.location_anonymization.get("enabled") is not None
+        
         assert config.pii_mechanisms is not None
+        assert isinstance(config.pii_mechanisms, dict)
+        assert len(config.pii_mechanisms) > 0
+        
         assert config.info is not None
+        assert isinstance(config.info, str)
+        assert len(config.info) > 0
         
     def test_template_location_anonymization(self):
         """Test that location anonymization config is present."""
