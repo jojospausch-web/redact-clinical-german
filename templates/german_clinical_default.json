@@ -77,25 +77,22 @@
   },
   
   "date_handling": {
-    "enabled": true,
-    "shift_days_range": [-30, 30],
-    
-    "german_months": {
-      "full": ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
-      "abbreviated": ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
-    },
-    
-    "date_patterns": {
-      "german_full": "\\b(\\d{1,2})\\. ([A-Za-zä]+) (\\d{4})\\b",
-      "german_abbr": "\\b(\\d{1,2})\\. ([A-Za-zä]{3}\\.?) (\\d{4})\\b",
-      "numeric": "\\b(\\d{2})\\.(\\d{2})\\.(\\d{4})\\b",
-      "birthdate": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})"
-    },
-    
     "birthdate": {
       "pattern": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
       "action": "shift",
       "shift_days_range": [-30, 30]
+    },
+    "german_full_date": {
+      "pattern": "\\b(\\d{1,2})\\. (Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember) (\\d{4})\\b",
+      "action": "shift"
+    },
+    "german_abbr_date": {
+      "pattern": "\\b(\\d{1,2})\\. (Jan|Feb|Mär|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez)\\.? (\\d{4})\\b",
+      "action": "shift"
+    },
+    "numeric_date": {
+      "pattern": "\\b(\\d{2})\\.(\\d{2})\\.(\\d{4})\\b",
+      "action": "shift"
     },
     "treatment_dates": {
       "pattern": "\\b(\\d{2}\\.\\d{2}\\.\\d{4})\\b",
@@ -103,10 +100,30 @@
     }
   },
   
+  "pii_mechanisms": {
+    "PATIENT_NAME": "redact",
+    "DOCTOR_NAME": "redact",
+    "REFERRING_DOCTOR": "redact",
+    "ADDRESS": "redact",
+    "CITY": "redact",
+    "MEDICAL_FACILITY": "redact",
+    "DATE": "shift_date",
+    "BIRTHDATE": "shift_date",
+    "CASE_ID": "redact",
+    "PHONE": "redact",
+    "EMAIL": "redact",
+    "IBAN": "redact",
+    "SALUTATION": "redact",
+    "LASTNAME": "redact",
+    "FIRSTNAME": "redact"
+  },
+  
   "image_pii_patterns": {
     "case_number": "\\d{6,10}",
     "name": "^[A-ZÄÖÜ][a-zäöüß]+\\s+[A-ZÄÖÜ][a-zäöüß]+$",
     "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}"
-  }
+  },
+  
+  "info": "Template für deutsche medizinische Arztbriefe mit kontextbasierter Orts-/Einrichtungserkennung und deutschen Monats-Namen."
 }
 
