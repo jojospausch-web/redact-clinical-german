@@ -41,9 +41,9 @@ def create_preview_with_zones(pdf_file, header_page1: int, footer_page1: int, fo
     
     Args:
         pdf_file: Uploaded PDF file object
-        header_page1: Height of header zone in pixels from top (Page 1)
-        footer_page1: Height of footer zone in pixels from bottom (Page 1)
-        footer_other: Height of footer zone in pixels from bottom (Pages 2+)
+        header_page1: Height of header zone in PDF points from top (Page 1)
+        footer_page1: Height of footer zone in PDF points from bottom (Page 1)
+        footer_other: Height of footer zone in PDF points from bottom (Pages 2+)
         
     Returns:
         PIL Image with zone overlays
@@ -123,9 +123,9 @@ def create_preview_with_zones(pdf_file, header_page1: int, footer_page1: int, fo
         from PIL import ImageFont
         font = ImageFont.load_default()
     
-    draw.text((10, 10), f"Header: {header_page1}px", fill=(0, 100, 255, 255), font=font)
-    draw.text((10, page_height - 30), f"Footer Seite 1: {footer_page1}px", fill=(255, 140, 0, 255), font=font)
-    draw.text((10, page_height - 60), f"Footer Seite 2+: {footer_other}px", fill=(0, 200, 0, 255), font=font)
+    draw.text((10, 10), f"Header: {header_page1}pt", fill=(0, 100, 255, 255), font=font)
+    draw.text((10, page_height - 30), f"Footer Seite 1: {footer_page1}pt", fill=(255, 140, 0, 255), font=font)
+    draw.text((10, page_height - 60), f"Footer Seite 2+: {footer_other}pt", fill=(0, 200, 0, 255), font=font)
     
     # Combine original image with overlay
     result = Image.alpha_composite(img.convert('RGBA'), overlay)
@@ -144,10 +144,10 @@ def create_custom_template(
     """Erstellt Template-Dict aus User-Einstellungen mit separaten Zonen für Seite 1 vs. Folgeseiten.
     
     Args:
-        header_page1: Header height in pixels from top (Page 1 only)
-        footer_page1: Footer height in pixels from bottom (Page 1 only)
-        footer_other: Footer height in pixels from bottom (Pages 2+)
-        signature_block_height: Height below signature trigger to redact
+        header_page1: Header height in PDF points from top (Page 1 only)
+        footer_page1: Footer height in PDF points from bottom (Page 1 only)
+        footer_other: Footer height in PDF points from bottom (Pages 2+)
+        signature_block_height: Height below signature trigger to redact in PDF points
         shift_days: Days to shift dates (0 = random)
         
     Returns:
