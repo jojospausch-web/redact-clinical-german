@@ -9,6 +9,8 @@ A sophisticated Python tool for anonymizing German medical documents (PDFs) usin
 - **Zone-Based PDF Anonymization**: Intelligently redacts header, footer, and main content zones
 - **Structured PII Extraction**: Uses contextual regex patterns (NOT generic NER)
 - **Medical Term Preservation**: Never flags medical terminology as PII
+- **Context-Based Location Detection**: Recognizes cities and medical facilities only in specific contexts
+- **German Month Name Support**: Handles dates with German month names ("5. November 2023")
 - **Image Extraction & Anonymization**: OCR-based detection and redaction of PII in embedded images
 - **Consistent Date Shifting**: Maintains temporal relationships while anonymizing dates
 - **Docker Support**: Cross-platform deployment on Windows/macOS/Linux
@@ -222,6 +224,85 @@ The system recognizes these structured patterns:
 - **Format**: `Dr. Schmidt`
 - **Extracted**: Referring doctor name
 
+## 🌍 Location and Medical Facility Anonymization (v2.0)
+
+### Context-Based City Detection
+
+The system recognizes German cities **ONLY** in specific contexts to avoid false positives:
+
+✅ **Recognized:**
+- After postal code: `"37075 Göttingen"` → `"37075 [ORT]"`
+- With prepositions: `"aus Darmstadt"` → `"aus [ORT]"`
+- At clinics: `"Universitätsklinikum Eppendorf"` → `"[KLINIK]"`
+- In referrals: `"überwiesen aus Einbeck"` → `"überwiesen aus [ORT]"`
+
+❌ **Ignored (No Context):**
+- `"Göttingen-Studie"` (technical term, not a location context)
+- `"Hamburger Klassifikation"` (medical classification)
+
+### Database
+
+- **~250 German cities** from major cities to smaller towns
+- **12+ major medical facilities** (university hospitals, MVZs)
+- **Blacklist support** for special cases (e.g., "UKE" without context)
+
+### German Month Names Support
+
+Supports date shifting with format preservation:
+
+**Supported Formats:**
+- `"5. November 2023"` → shifted with full month name preserved
+- `"5. Nov. 2023"` → abbreviations maintained
+- `"05.11.2023"` → numeric format preserved
+
+**Example:**
+```python
+# Original: "Patient aufgenommen am 5. November 2023"
+# Shifted (+25 days): "Patient aufgenommen am 30. November 2023"
+```
+
+**All German months recognized:**
+- Full names: Januar, Februar, März, April, Mai, Juni, Juli, August, September, Oktober, November, Dezember
+- Abbreviations: Jan., Feb., Mär., Apr., Mai, Jun., Jul., Aug., Sep., Okt., Nov., Dez.
+
+### Configuration
+
+In `templates/german_clinical_default.json`:
+
+```json
+{
+  "location_anonymization": {
+    "enabled": true,
+    "location_blacklist": [
+      "UKE",
+      "Charité",
+      "Northeim",
+      "Eppendorf"
+    ],
+    "replacement": "[ORT]",
+    "facility_replacement": "[KLINIK]"
+  },
+  "date_handling": {
+    "enabled": true,
+    "shift_days_range": [-30, 30],
+    "german_months": {
+      "full": ["Januar", "Februar", "März", ...],
+      "abbreviated": ["Jan", "Feb", "Mär", ...]
+    }
+  }
+}
+```
+
+### Priority System
+
+When multiple contexts match:
+1. **Blacklist** (highest priority) - always recognized
+2. **Postal code context** - "37075 Göttingen"
+3. **Preposition context** - "aus Darmstadt"
+4. **Medical facility context** - "Klinikum Hamburg"
+5. **Referral context** - "überwiesen aus..."
+
+
 ## 🧪 Testing
 
 ```bash
@@ -238,7 +319,10 @@ pytest tests/ --cov=src --cov-report=html
 ### Test Coverage
 
 - ✅ Date shifting consistency
+- ✅ German month name parsing and shifting
 - ✅ PII extraction with German umlauts
+- ✅ Context-based location detection
+- ✅ Medical facility recognition
 - ✅ Zone-based redaction
 - ✅ Context-triggered extraction
 - ✅ Image anonymization
