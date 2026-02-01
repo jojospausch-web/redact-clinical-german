@@ -10,6 +10,7 @@ class ZoneConfig(BaseModel):
     
     page: Optional[int] = None  # None means all pages
     pages: Optional[str] = None  # "all" or specific page numbers
+    exclude_page: Optional[int] = None  # Exclude specific page from zone
     y_start: float
     y_end: float
     redaction: str = Field(..., pattern="^(full|keyword_based|none)$")
@@ -37,6 +38,16 @@ class DateHandlingConfig(BaseModel):
     shift_days_range: Optional[Tuple[int, int]] = None
 
 
+class SignatureBlockConfig(BaseModel):
+    """Configuration for signature block redaction."""
+    model_config = ConfigDict(extra='allow')
+    
+    enabled: bool = True
+    trigger: str = "Mit freundlichen Grüßen"
+    height_below: int = 40
+    redaction: str = "full"
+
+
 class AnonymizationTemplate(BaseModel):
     """Main configuration template for anonymization rules."""
     model_config = ConfigDict(extra='allow')
@@ -49,6 +60,8 @@ class AnonymizationTemplate(BaseModel):
     image_pii_patterns: Dict[str, str]
     
     # Optional fields for additional configurations
+    signature_block: Optional[SignatureBlockConfig] = None
+    shift_days: Optional[int] = None
     location_anonymization: Optional[Dict[str, Any]] = None
     pii_mechanisms: Optional[Dict[str, str]] = None
     info: Optional[str] = None
