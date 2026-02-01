@@ -70,6 +70,32 @@ docker run -v $(pwd)/input:/input -v $(pwd)/output:/output \
 
 ## 🚀 Quick Start
 
+### 🖥️ Web-UI (Streamlit) - Recommended for Batch Processing
+
+**Option 1: Docker (Empfohlen)**
+```bash
+docker-compose up -d
+# Open browser at http://localhost:8501
+```
+
+**Option 2: Lokale Installation**
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+# Open browser at http://localhost:8501
+```
+
+#### Web UI Features
+
+- ✅ **Drag & Drop Upload** mehrerer PDFs
+- ✅ **Batch-Verarbeitung** mit Live-Progress
+- ✅ **Einzeldownload** jeder anonymisierten Datei
+- ✅ **ZIP-Download** aller Dateien auf einmal
+- ✅ **Konfigurierbar** (Template, Datum-Shift, Bilder)
+- ✅ **Statistiken** (Anzahl gefundener PII pro Datei)
+
+### Command Line Interface (CLI)
+
 ### Basic Usage
 
 ```bash
