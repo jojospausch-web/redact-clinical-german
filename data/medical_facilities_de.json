@@ -1,0 +1,58 @@
+{
+  "universities": {
+    "Charité Berlin": {
+      "city": "Berlin",
+      "aliases": ["Charité", "Charité Berlin", "Universitätsmedizin Berlin"]
+    },
+    "UKE Hamburg": {
+      "city": "Hamburg",
+      "aliases": ["UKE", "Universitätsklinikum Eppendorf", "Universitätsklinikum Hamburg-Eppendorf"]
+    },
+    "Universitätsmedizin Göttingen": {
+      "city": "Göttingen",
+      "aliases": ["UMG", "Universitätsmedizin Göttingen", "Uniklinik Göttingen"]
+    },
+    "LMU Klinikum München": {
+      "city": "München",
+      "aliases": ["LMU Klinikum", "Klinikum der Universität München"]
+    },
+    "Universitätsklinikum Heidelberg": {
+      "city": "Heidelberg",
+      "aliases": ["Universitätsklinikum Heidelberg", "Uniklinik Heidelberg"]
+    },
+    "Universitätsklinikum Freiburg": {
+      "city": "Freiburg",
+      "aliases": ["Universitätsklinikum Freiburg", "Uniklinik Freiburg"]
+    },
+    "Medizinische Hochschule Hannover": {
+      "city": "Hannover",
+      "aliases": ["MHH", "Medizinische Hochschule Hannover"]
+    },
+    "Universitätsklinikum Frankfurt": {
+      "city": "Frankfurt am Main",
+      "aliases": ["Universitätsklinikum Frankfurt", "Uniklinik Frankfurt"]
+    },
+    "Universitätsklinikum Köln": {
+      "city": "Köln",
+      "aliases": ["Universitätsklinikum Köln", "Uniklinik Köln"]
+    },
+    "Universitätsklinikum Düsseldorf": {
+      "city": "Düsseldorf",
+      "aliases": ["Universitätsklinikum Düsseldorf", "Uniklinik Düsseldorf"]
+    },
+    "Universitätsklinikum Essen": {
+      "city": "Essen",
+      "aliases": ["Universitätsklinikum Essen", "Uniklinik Essen"]
+    },
+    "Universitätsklinikum Leipzig": {
+      "city": "Leipzig",
+      "aliases": ["Universitätsklinikum Leipzig", "Uniklinik Leipzig"]
+    }
+  },
+  "abbreviations": {
+    "UKE": "Universitätsklinikum Eppendorf",
+    "UMG": "Universitätsmedizin Göttingen",
+    "LMU": "LMU Klinikum München",
+    "MHH": "Medizinische Hochschule Hannover"
+  }
+}
