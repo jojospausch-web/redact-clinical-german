@@ -162,9 +162,8 @@ if uploaded_files:
     
     # ======= ANONYMISIERUNG =======
     st.header("🚀 Anonymisierung")
-
-# Batch processing
-if uploaded_files:
+    
+    # Batch processing button and logic (consolidated in same block)
     if st.button("🚀 Anonymisierung starten", type="primary", use_container_width=True):
         # Clear previous results
         st.session_state['results'] = []
@@ -327,10 +326,17 @@ def create_preview_with_zones(pdf_file, header_height: int, footer_height: int) 
     Returns:
         PIL Image with zone overlays
     """
+    # Read PDF bytes and handle potential seek issues
     pdf_bytes = pdf_file.read()
-    pdf_file.seek(0)  # Reset file pointer for later use
     
-    # Open PDF with PyMuPDF
+    # Reset file pointer if possible (for later use by other functions)
+    try:
+        pdf_file.seek(0)
+    except (AttributeError, io.UnsupportedOperation):
+        # If seek is not supported, that's okay - we already have the bytes
+        pass
+    
+    # Open PDF with PyMuPDF using the bytes we read
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     page = doc[0]  # Get first page
     
@@ -408,6 +414,9 @@ def create_custom_template(
     # Update header zone
     # PDF coordinates: y=0 is bottom, y=842 is top
     # User sees: top down, so we convert
+    # Note: We use both 'page' and 'pages' fields as per ZoneConfig spec:
+    #   - 'page': specific page number (1-indexed), or None for all pages
+    #   - 'pages': "all" for all pages, or None if using specific page
     template['zones']['header'] = {
         "y_start": A4_HEIGHT - header_height,
         "y_end": A4_HEIGHT,
