@@ -15,6 +15,9 @@ import sys
 import tempfile
 import os
 import re
+import json
+import fitz  # PyMuPDF
+from PIL import Image, ImageDraw
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -97,11 +100,87 @@ uploaded_files = st.file_uploader(
     help="Sie können mehrere PDF-Dateien gleichzeitig hochladen"
 )
 
+if uploaded_files:
+    st.success(f"✅ {len(uploaded_files)} Datei(en) hochgeladen")
+    
+    # ======= ZONEN-KONFIGURATION =======
+    st.header("⚙️ Zonen-Einstellungen")
+    st.markdown("**Diese Einstellungen gelten für ALLE hochgeladenen PDFs**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📏 Header-Bereich")
+        header_height = st.slider(
+            "Header-Höhe (Pixel von oben)",
+            min_value=0,
+            max_value=300,
+            value=150,
+            step=10,
+            help="Bereich am oberen Seitenrand (wird komplett geschwärzt)"
+        )
+        
+        header_pages = st.selectbox(
+            "Header schwärzen auf",
+            options=["Nur Seite 1", "Allen Seiten"],
+            index=0
+        )
+    
+    with col2:
+        st.subheader("📏 Footer-Bereich")
+        footer_height = st.slider(
+            "Footer-Höhe (Pixel von unten)",
+            min_value=0,
+            max_value=200,
+            value=92,
+            step=10,
+            help="Bereich am unteren Seitenrand"
+        )
+        
+        footer_keywords = st.multiselect(
+            "Footer-Keywords",
+            options=["IBAN", "Bankverbindung", "Sparkasse", "BIC", "Stiftung", "Vorstand"],
+            default=["IBAN", "Bankverbindung", "Sparkasse"]
+        )
+    
+    # ======= LIVE-VORSCHAU =======
+    st.header("📄 Vorschau mit Schwärzungs-Bereichen")
+    
+    try:
+        preview_image = create_preview_with_zones(
+            pdf_file=uploaded_files[0],
+            header_height=header_height,
+            footer_height=footer_height
+        )
+        
+        st.image(preview_image, caption=f"Vorschau: {uploaded_files[0].name}", use_column_width=True)
+        
+        st.info(f"🔵 **Blauer Bereich** = Header ({header_height}px von oben, wird komplett geschwärzt) | "
+                f"🟠 **Oranger Bereich** = Footer ({footer_height}px von unten)")
+    except Exception as e:
+        st.warning(f"⚠️ Vorschau konnte nicht erstellt werden: {str(e)}")
+    
+    # ======= ANONYMISIERUNG =======
+    st.header("🚀 Anonymisierung")
+
 # Batch processing
 if uploaded_files:
-    if st.button("🚀 Anonymisierung starten", type="primary"):
+    if st.button("🚀 Anonymisierung starten", type="primary", use_container_width=True):
         # Clear previous results
         st.session_state['results'] = []
+        
+        # Create custom template from user settings
+        custom_template = create_custom_template(
+            header_height=header_height,
+            header_pages=header_pages,
+            footer_height=footer_height,
+            footer_keywords=footer_keywords
+        )
+        
+        # Save custom template to temp file
+        temp_template_path = Path(tempfile.gettempdir()) / "custom_template.json"
+        with open(temp_template_path, 'w', encoding='utf-8') as f:
+            json.dump(custom_template, f, indent=2, ensure_ascii=False)
         
         # Progress tracking
         progress_bar = st.progress(0)
@@ -132,7 +211,7 @@ if uploaded_files:
                 # shift_days: 0 means random shift (None triggers random behavior in backend)
                 result = anonymize_pdf(
                     input_path=str(temp_input),
-                    template_path=template_file,
+                    template_path=str(temp_template_path),
                     output_path=str(temp_output),
                     shift_days=shift_days if shift_days != 0 else None,
                     extract_images=extract_images
@@ -235,3 +314,121 @@ if not uploaded_files:
     - ✅ Konfigurierbare Anonymisierung
     - ✅ Statistiken pro Datei
     """)
+
+
+def create_preview_with_zones(pdf_file, header_height: int, footer_height: int) -> Image.Image:
+    """Erstellt Vorschau mit eingezeichneten Zonen.
+    
+    Args:
+        pdf_file: Uploaded PDF file object
+        header_height: Height of header zone in pixels from top
+        footer_height: Height of footer zone in pixels from bottom
+        
+    Returns:
+        PIL Image with zone overlays
+    """
+    pdf_bytes = pdf_file.read()
+    pdf_file.seek(0)  # Reset file pointer for later use
+    
+    # Open PDF with PyMuPDF
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page = doc[0]  # Get first page
+    
+    # Render page as image with 2x zoom for better quality
+    zoom = 2
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat)
+    
+    # Convert to PIL Image
+    img_data = pix.tobytes("png")
+    img = Image.open(io.BytesIO(img_data))
+    
+    # Create transparent overlay for zones
+    overlay = Image.new('RGBA', img.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(overlay)
+    
+    page_height = pix.height
+    page_width = pix.width
+    
+    # PDF coordinates are from bottom, but display is from top
+    # header_height is from top in PDF points (A4 = 842pt)
+    # Scale to actual image pixels
+    A4_HEIGHT = 842
+    header_y_end = int((header_height / A4_HEIGHT) * page_height)
+    
+    # Draw header zone (blue)
+    draw.rectangle(
+        [(0, 0), (page_width, header_y_end)],
+        fill=(0, 100, 255, 80),
+        outline=(0, 100, 255, 200),
+        width=3
+    )
+    
+    # Draw footer zone (orange)
+    footer_y_start = page_height - int((footer_height / A4_HEIGHT) * page_height)
+    draw.rectangle(
+        [(0, footer_y_start), (page_width, page_height)],
+        fill=(255, 140, 0, 80),
+        outline=(255, 140, 0, 200),
+        width=3
+    )
+    
+    # Combine original image with overlay
+    result = Image.alpha_composite(img.convert('RGBA'), overlay)
+    doc.close()
+    
+    return result.convert('RGB')
+
+
+def create_custom_template(
+    header_height: int,
+    header_pages: str,
+    footer_height: int,
+    footer_keywords: list
+) -> dict:
+    """Erstellt Template-Dict aus User-Einstellungen.
+    
+    Args:
+        header_height: Header height in pixels from top
+        header_pages: "Nur Seite 1" or "Allen Seiten"
+        footer_height: Footer height in pixels from bottom
+        footer_keywords: List of keywords to search for in footer
+        
+    Returns:
+        Dictionary with template configuration
+    """
+    # Load base template
+    template_path = Path(__file__).parent / 'templates' / 'german_clinical_default.json'
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = json.load(f)
+    
+    # A4 page height in points
+    A4_HEIGHT = 842
+    
+    # Update header zone
+    # PDF coordinates: y=0 is bottom, y=842 is top
+    # User sees: top down, so we convert
+    template['zones']['header'] = {
+        "y_start": A4_HEIGHT - header_height,
+        "y_end": A4_HEIGHT,
+        "redaction": "full",
+        "preserve_logos": True
+    }
+    
+    if header_pages == "Nur Seite 1":
+        template['zones']['header']['page'] = 1
+        template['zones']['header']['pages'] = None
+    else:
+        template['zones']['header']['page'] = None
+        template['zones']['header']['pages'] = "all"
+    
+    # Update footer zone
+    template['zones']['footer'] = {
+        "pages": "all",
+        "y_start": 0,
+        "y_end": footer_height,
+        "redaction": "keyword_based" if footer_keywords else "full",
+        "keywords": footer_keywords if footer_keywords else []
+    }
+    
+    return template

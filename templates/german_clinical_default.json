@@ -47,6 +47,17 @@
       "context_trigger": "Zuweiser",
       "pattern": "Dr\\.\\s+([A-ZÄÖÜ][a-zäöüß-]+)",
       "type": "REFERRING_DOCTOR"
+    },
+    "postal_code_with_city": {
+      "pattern": "(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+)",
+      "groups": {
+        "1": "POSTAL_CODE",
+        "2": "CITY"
+      }
+    },
+    "postal_code_standalone": {
+      "pattern": "(?:PLZ:?\\s*)?(\\d{5})(?!\\d)",
+      "type": "POSTAL_CODE"
     }
   },
   
@@ -115,7 +126,8 @@
     "IBAN": "redact",
     "SALUTATION": "redact",
     "LASTNAME": "redact",
-    "FIRSTNAME": "redact"
+    "FIRSTNAME": "redact",
+    "POSTAL_CODE": "redact"
   },
   
   "image_pii_patterns": {
