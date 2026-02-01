@@ -5,6 +5,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from pydantic import ValidationError
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,6 +22,54 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def load_and_validate_template(template_path: str) -> AnonymizationTemplate:
+    """
+    Load and validate anonymization template with helpful error messages.
+    
+    Args:
+        template_path: Path to the template JSON file
+        
+    Returns:
+        AnonymizationTemplate: Validated template object
+        
+    Raises:
+        FileNotFoundError: If template file doesn't exist
+        ValueError: If template validation fails
+        json.JSONDecodeError: If JSON is malformed
+    """
+    if not Path(template_path).exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+    
+    try:
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template_data = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in template: {template_path}")
+        raise ValueError(
+            f"Template '{template_path}' enthält ungültiges JSON.\n"
+            f"Fehler in Zeile {e.lineno}, Spalte {e.colno}: {e.msg}"
+        )
+    
+    try:
+        validated = AnonymizationTemplate(**template_data)
+        logger.debug(f"Template validated: {validated.template_name} v{validated.version}")
+        return validated
+    except ValidationError as e:
+        logger.error(f"Template validation failed: {template_path}")
+        logger.error(f"Validation errors:\n{e}")
+        
+        # Create helpful error message
+        error_details = []
+        for error in e.errors():
+            field = '.'.join(str(x) for x in error['loc'])
+            error_details.append(f"  - {field}: {error['msg']}")
+        
+        raise ValueError(
+            f"Template '{template_path}' hat Validierungsfehler.\n"
+            f"Bitte prüfe die Struktur:\n" + '\n'.join(error_details)
+        )
 
 
 def anonymize_pdf(
@@ -57,13 +106,9 @@ def anonymize_pdf(
     
     logger.info(f"Starting anonymization of: {input_path}")
     
-    # Load anonymization template
+    # Load and validate anonymization template
     logger.info(f"Loading template: {template_path}")
-    with open(template_path, 'r', encoding='utf-8') as f:
-        template_data = json.load(f)
-    
-    # Validate and parse template
-    config = AnonymizationTemplate(**template_data)
+    config = load_and_validate_template(template_path)
     logger.info(f"Loaded template: {config.template_name} v{config.version}")
     
     # Initialize date shifter
