@@ -21,7 +21,8 @@
   
   "structured_patterns": {
     "patient_block": {
-      "pattern": "(Herr|Frau)\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
+      "pattern": "^(Herr|Frau)\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
+      "comment": "^ = only at line beginning (requires re.MULTILINE flag), prevents 'Sehr geehrter Herr Kollege'",
       "groups": {
         "1": "SALUTATION",
         "2": "LASTNAME",
@@ -36,6 +37,20 @@
     "address": {
       "pattern": "([A-ZÄÖÜ][a-zäöüß]+(?:straße|str\\.|weg|platz|allee))\\s+(\\d+[a-z]?),?\\s+(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+)",
       "type": "ADDRESS"
+    },
+    "doctor_name": {
+      "pattern": "((?:Prof\\.|Dr\\.|PD)\\s+(?:med\\.\\s+)?[A-ZÄÖÜ][a-zäöüß-]+(?:\\s+[A-ZÄÖÜ][a-zäöüß-]+)*)",
+      "type": "DOCTOR_NAME",
+      "comment": "Captures complete doctor name as single group"
+    },
+    "doctor_with_location": {
+      "pattern": "Dr\\.\\s+([A-ZÄÖÜ][a-zäöüß-]+)(?:,\\s+([A-Z]{2,})\\s+([A-ZÄÖÜ][a-zäöüß]+))?",
+      "comment": "Captures 'Dr. Führig, MVZ Hannover'",
+      "groups": {
+        "1": "DOCTOR_NAME",
+        "2": "ORGANIZATION",
+        "3": "CITY"
+      }
     },
     "doctor_signature": {
       "context_trigger": "Mit freundlichen Grüßen",
@@ -105,6 +120,11 @@
       "pattern": "\\b(\\d{2})\\.(\\d{2})\\.(\\d{4})\\b",
       "action": "shift"
     },
+    "date_with_context": {
+      "pattern": "(?:vom|bis|am|seit|zum)\\s+(\\d{1,2})\\.(\\d{1,2})(?:\\.(\\d{4}))?",
+      "comment": "Captures '05.08 bis zum 21.08.2023'",
+      "action": "shift"
+    },
     "treatment_dates": {
       "pattern": "\\b(\\d{2}\\.\\d{2}\\.\\d{4})\\b",
       "action": "shift_relative"
@@ -117,6 +137,7 @@
     "REFERRING_DOCTOR": "redact",
     "ADDRESS": "redact",
     "CITY": "redact",
+    "ORGANIZATION": "redact",
     "MEDICAL_FACILITY": "redact",
     "DATE": "shift_date",
     "BIRTHDATE": "shift_date",

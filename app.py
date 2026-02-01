@@ -105,43 +105,70 @@ if uploaded_files:
     
     # ======= ZONEN-KONFIGURATION =======
     st.header("⚙️ Zonen-Einstellungen")
-    st.markdown("**Diese Einstellungen gelten für ALLE hochgeladenen PDFs**")
+    st.markdown("**Passen Sie die Schwärzungs-Bereiche individuell an**")
+    
+    # ======= SEITE 1 (TITELSEITE) =======
+    st.subheader("📄 Seite 1 (Titelseite)")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📏 Header-Bereich")
-        header_height = st.slider(
+        st.markdown("**Header-Bereich**")
+        header_page1 = st.slider(
             "Header-Höhe (Pixel von oben)",
             min_value=0,
-            max_value=300,
-            value=150,
+            max_value=400,
+            value=280,
             step=10,
-            help="Bereich am oberen Seitenrand (wird komplett geschwärzt)"
+            key="header_p1",
+            help="Kompletter schwarzer Block oben (inkl. Logos, Adressen, Datum)"
         )
-        
-        header_pages = st.selectbox(
-            "Header schwärzen auf",
-            options=["Nur Seite 1", "Allen Seiten"],
-            index=0
-        )
+        st.info("🔲 Komplett geschwärzt (keine Logo-Erhaltung)")
     
     with col2:
-        st.subheader("📏 Footer-Bereich")
-        footer_height = st.slider(
+        st.markdown("**Footer-Bereich**")
+        footer_page1 = st.slider(
             "Footer-Höhe (Pixel von unten)",
             min_value=0,
-            max_value=200,
-            value=92,
-            step=10,
-            help="Bereich am unteren Seitenrand"
+            max_value=150,
+            value=35,
+            step=5,
+            key="footer_p1",
+            help="Nur die unterste Zeile mit IBAN/Bankdaten"
         )
-        
-        footer_keywords = st.multiselect(
-            "Footer-Keywords",
-            options=["IBAN", "Bankverbindung", "Sparkasse", "BIC", "Stiftung", "Vorstand"],
-            default=["IBAN", "Bankverbindung", "Sparkasse"]
-        )
+        st.info("🔲 Komplett geschwärzt")
+    
+    st.divider()
+    
+    # ======= FOLGESEITEN (2+) =======
+    st.subheader("📄 Folgeseiten (Seite 2, 3, ...)")
+    
+    footer_other = st.slider(
+        "Footer-Höhe (Pixel von unten)",
+        min_value=0,
+        max_value=150,
+        value=80,
+        step=5,
+        key="footer_other",
+        help="Höher als Seite 1, um Name + Geburtsdatum in Fußzeile zu erfassen"
+    )
+    st.info("🔲 Erfasst: 'Alexander Brügge, *01.01.1960, Seite 2'")
+    
+    st.divider()
+    
+    # ======= SIGNATUR-BLOCK =======
+    st.subheader("✍️ Signatur-Block")
+    
+    signature_block_height = st.slider(
+        "Höhe nach 'Mit freundlichen Grüßen' (Pixel)",
+        min_value=0,
+        max_value=100,
+        value=40,
+        step=5,
+        key="signature_block",
+        help="Schwärzt kompletten Block unter der Grußformel (alle Arzt-Namen)"
+    )
+    st.info("✅ Erfasst alle Namen, auch mehrere Ärzte")
     
     # ======= LIVE-VORSCHAU =======
     st.header("📄 Vorschau mit Schwärzungs-Bereichen")
@@ -149,14 +176,16 @@ if uploaded_files:
     try:
         preview_image = create_preview_with_zones(
             pdf_file=uploaded_files[0],
-            header_height=header_height,
-            footer_height=footer_height
+            header_page1=header_page1,
+            footer_page1=footer_page1,
+            footer_other=footer_other
         )
         
         st.image(preview_image, caption=f"Vorschau: {uploaded_files[0].name}", use_column_width=True)
         
-        st.info(f"🔵 **Blauer Bereich** = Header ({header_height}px von oben, wird komplett geschwärzt) | "
-                f"🟠 **Oranger Bereich** = Footer ({footer_height}px von unten)")
+        st.info(f"🔵 **Blauer Bereich** = Header Seite 1 ({header_page1}px von oben) | "
+                f"🟠 **Oranger Bereich** = Footer Seite 1 ({footer_page1}px von unten) | "
+                f"🟢 **Grüner Text** = Footer Folgeseiten ({footer_other}px)")
     except Exception as e:
         st.warning(f"⚠️ Vorschau konnte nicht erstellt werden: {str(e)}")
     
@@ -170,10 +199,11 @@ if uploaded_files:
         
         # Create custom template from user settings
         custom_template = create_custom_template(
-            header_height=header_height,
-            header_pages=header_pages,
-            footer_height=footer_height,
-            footer_keywords=footer_keywords
+            header_page1=header_page1,
+            footer_page1=footer_page1,
+            footer_other=footer_other,
+            signature_block_height=signature_block_height,
+            shift_days=shift_days
         )
         
         # Save custom template to temp file
@@ -315,13 +345,14 @@ if not uploaded_files:
     """)
 
 
-def create_preview_with_zones(pdf_file, header_height: int, footer_height: int) -> Image.Image:
+def create_preview_with_zones(pdf_file, header_page1: int, footer_page1: int, footer_other: int) -> Image.Image:
     """Erstellt Vorschau mit eingezeichneten Zonen.
     
     Args:
         pdf_file: Uploaded PDF file object
-        header_height: Height of header zone in pixels from top
-        footer_height: Height of footer zone in pixels from bottom
+        header_page1: Height of header zone in pixels from top (Page 1)
+        footer_page1: Height of footer zone in pixels from bottom (Page 1)
+        footer_other: Height of footer zone in pixels from bottom (Pages 2+)
         
     Returns:
         PIL Image with zone overlays
@@ -357,10 +388,10 @@ def create_preview_with_zones(pdf_file, header_height: int, footer_height: int) 
     page_width = pix.width
     
     # PDF coordinates are from bottom, but display is from top
-    # header_height is from top in PDF points (A4 = 842pt)
+    # header_page1 is from top in PDF points (A4 = 842pt)
     # Scale to actual image pixels
     A4_HEIGHT = 842
-    header_y_end = int((header_height / A4_HEIGHT) * page_height)
+    header_y_end = int((header_page1 / A4_HEIGHT) * page_height)
     
     # Draw header zone (blue)
     draw.rectangle(
@@ -370,14 +401,40 @@ def create_preview_with_zones(pdf_file, header_height: int, footer_height: int) 
         width=3
     )
     
-    # Draw footer zone (orange)
-    footer_y_start = page_height - int((footer_height / A4_HEIGHT) * page_height)
+    # Draw footer zone Page 1 (orange)
+    footer1_y_start = page_height - int((footer_page1 / A4_HEIGHT) * page_height)
     draw.rectangle(
-        [(0, footer_y_start), (page_width, page_height)],
+        [(0, footer1_y_start), (page_width, page_height)],
         fill=(255, 140, 0, 80),
         outline=(255, 140, 0, 200),
         width=3
     )
+    
+    # Add text overlay for info
+    try:
+        from PIL import ImageFont
+        # Try common font paths across different operating systems
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+            "/System/Library/Fonts/Helvetica.ttc",  # macOS
+            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+        ]
+        font = None
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, 16)
+                break
+            except (OSError, IOError):
+                continue
+        if font is None:
+            font = ImageFont.load_default()
+    except (OSError, IOError):
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+    
+    draw.text((10, 10), f"Header: {header_page1}px", fill=(0, 100, 255, 255), font=font)
+    draw.text((10, page_height - 30), f"Footer Seite 1: {footer_page1}px", fill=(255, 140, 0, 255), font=font)
+    draw.text((10, page_height - 60), f"Footer Seite 2+: {footer_other}px", fill=(0, 200, 0, 255), font=font)
     
     # Combine original image with overlay
     result = Image.alpha_composite(img.convert('RGBA'), overlay)
@@ -387,57 +444,83 @@ def create_preview_with_zones(pdf_file, header_height: int, footer_height: int) 
 
 
 def create_custom_template(
-    header_height: int,
-    header_pages: str,
-    footer_height: int,
-    footer_keywords: list
+    header_page1: int,
+    footer_page1: int,
+    footer_other: int,
+    signature_block_height: int,
+    shift_days: int = 0
 ) -> dict:
-    """Erstellt Template-Dict aus User-Einstellungen.
+    """Erstellt Template-Dict aus User-Einstellungen mit separaten Zonen für Seite 1 vs. Folgeseiten.
     
     Args:
-        header_height: Header height in pixels from top
-        header_pages: "Nur Seite 1" or "Allen Seiten"
-        footer_height: Footer height in pixels from bottom
-        footer_keywords: List of keywords to search for in footer
+        header_page1: Header height in pixels from top (Page 1 only)
+        footer_page1: Footer height in pixels from bottom (Page 1 only)
+        footer_other: Footer height in pixels from bottom (Pages 2+)
+        signature_block_height: Height below signature trigger to redact
+        shift_days: Days to shift dates (0 = random)
         
     Returns:
         Dictionary with template configuration
     """
     # Load base template
     template_path = Path(__file__).parent / 'templates' / 'german_clinical_default.json'
-    with open(template_path, 'r', encoding='utf-8') as f:
-        template = json.load(f)
+    try:
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template = json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading template: {e}")
+        template = {
+            "template_name": "Custom",
+            "version": "2.0",
+            "zones": {},
+            "structured_patterns": {},
+            "date_handling": {},
+            "pii_mechanisms": {},
+            "image_pii_patterns": {}
+        }
     
     # A4 page height in points
     A4_HEIGHT = 842
     
-    # Update header zone
-    # PDF coordinates: y=0 is bottom, y=842 is top
-    # User sees: top down, so we convert
-    # Note: We use both 'page' and 'pages' fields as per ZoneConfig spec:
-    #   - 'page': specific page number (1-indexed), or None for all pages
-    #   - 'pages': "all" for all pages, or None if using specific page
-    template['zones']['header'] = {
-        "y_start": A4_HEIGHT - header_height,
+    # ======= ZONE 1: HEADER SEITE 1 =======
+    template['zones']['header_page_1'] = {
+        "page": 1,
+        "pages": None,
+        "y_start": A4_HEIGHT - header_page1,  # Convert from top to bottom
         "y_end": A4_HEIGHT,
         "redaction": "full",
-        "preserve_logos": True
+        "preserve_logos": False  # NO logo preservation!
     }
     
-    if header_pages == "Nur Seite 1":
-        template['zones']['header']['page'] = 1
-        template['zones']['header']['pages'] = None
-    else:
-        template['zones']['header']['page'] = None
-        template['zones']['header']['pages'] = "all"
-    
-    # Update footer zone
-    template['zones']['footer'] = {
-        "pages": "all",
+    # ======= ZONE 2: FOOTER SEITE 1 =======
+    template['zones']['footer_page_1'] = {
+        "page": 1,
+        "pages": None,
         "y_start": 0,
-        "y_end": footer_height,
-        "redaction": "keyword_based" if footer_keywords else "full",
-        "keywords": footer_keywords if footer_keywords else []
+        "y_end": footer_page1,
+        "redaction": "full",
+        "keywords": []  # No keyword search, ALWAYS redact everything
     }
+    
+    # ======= ZONE 3: FOOTER FOLGESEITEN =======
+    template['zones']['footer_other_pages'] = {
+        "page": None,
+        "pages": "all",
+        "exclude_page": 1,  # All EXCEPT page 1
+        "y_start": 0,
+        "y_end": footer_other,
+        "redaction": "full"
+    }
+    
+    # ======= SIGNATUR-BLOCK CONFIG =======
+    template['signature_block'] = {
+        "enabled": True,
+        "trigger": "Mit freundlichen Grüßen",
+        "height_below": signature_block_height,
+        "redaction": "full"
+    }
+    
+    # ======= SHIFT-DAYS CONFIG =======
+    template['shift_days'] = shift_days if shift_days != 0 else None
     
     return template

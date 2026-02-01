@@ -62,7 +62,8 @@ class StructuredPIIExtractor:
             List of PIIEntity objects
         """
         entities = []
-        pattern = re.compile(config.pattern)
+        # Use MULTILINE flag to support ^ (line beginning) patterns
+        pattern = re.compile(config.pattern, re.MULTILINE | re.IGNORECASE)
         
         for match in pattern.finditer(text):
             # Use the first capturing group if it exists, otherwise the whole match
@@ -95,7 +96,8 @@ class StructuredPIIExtractor:
             List of PIIEntity objects
         """
         entities = []
-        pattern = re.compile(config.pattern)
+        # Use MULTILINE flag to support ^ (line beginning) patterns
+        pattern = re.compile(config.pattern, re.MULTILINE | re.IGNORECASE)
         
         for match in pattern.finditer(text):
             # Extract each group according to the configuration
@@ -138,7 +140,8 @@ class StructuredPIIExtractor:
         search_text = text[search_start:search_end]
         
         # Search for pattern within the window
-        pattern = re.compile(config.pattern)
+        # Use MULTILINE flag to support ^ (line beginning) patterns
+        pattern = re.compile(config.pattern, re.MULTILINE | re.IGNORECASE)
         for match in pattern.finditer(search_text):
             # Adjust positions relative to the full text
             actual_start = search_start + match.start(0)

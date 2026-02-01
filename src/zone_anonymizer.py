@@ -62,12 +62,15 @@ class ZoneBasedAnonymizer:
             # 1. Apply zone-based redaction
             self._redact_zones(page, page_num, stats)
             
-            # 2. Extract and analyze text for structured PII
+            # 2. Apply signature block redaction
+            self._redact_signature_blocks(page)
+            
+            # 3. Extract and analyze text for structured PII
             text = page.get_text()
             pii_entities = self.pii_extractor.extract_pii(text)
             stats['pii_entities_found'] += len(pii_entities)
             
-            # 3. Redact PII entities
+            # 4. Redact PII entities
             self._redact_pii_entities(page, pii_entities, text, stats)
         
         # 4. Extract images if requested
@@ -87,7 +90,7 @@ class ZoneBasedAnonymizer:
         return stats
     
     def _redact_zones(self, page: fitz.Page, page_num: int, stats: dict):
-        """Redact predefined zones on a page.
+        """Redact predefined zones on a page with exclude_page support.
         
         Args:
             page: PDF page object
@@ -96,13 +99,21 @@ class ZoneBasedAnonymizer:
         """
         for zone_name, zone_config in self.template.zones.items():
             # Check if this zone applies to this page
-            if zone_config.page is not None and zone_config.page != page_num + 1:
-                continue
-            if zone_config.pages and zone_config.pages != "all":
-                # Parse specific page numbers if needed
-                continue
             
-            page_height = page.rect.height
+            # Case 1: Specific page (e.g. "page": 1)
+            if zone_config.page is not None:
+                if zone_config.page != page_num + 1:  # page_num is 0-indexed
+                    continue
+            
+            # Case 2: All pages ("pages": "all")
+            elif zone_config.pages == "all":
+                # Check exclude_page
+                if zone_config.exclude_page == page_num + 1:
+                    continue  # Skip this page
+            
+            # Case 3: No page specification → skip
+            else:
+                continue
             
             # Create redaction rectangle
             redact_rect = fitz.Rect(
@@ -194,6 +205,38 @@ class ZoneBasedAnonymizer:
                 if zone_rect.intersects(area):
                     page.add_redact_annot(area, fill=(0, 0, 0))
                     stats['zones_redacted'] += 1
+    
+    def _redact_signature_blocks(self, page: fitz.Page):
+        """Redact complete block AFTER 'Mit freundlichen Grüßen'.
+        
+        Args:
+            page: PDF page object
+        """
+        if not hasattr(self.template, 'signature_block') or not self.template.signature_block:
+            return
+        
+        sig_config = self.template.signature_block
+        if not sig_config.enabled:
+            return
+        
+        trigger = sig_config.trigger
+        height = sig_config.height_below
+        
+        # Find all instances of the trigger
+        instances = page.search_for(trigger)
+        
+        for inst in instances:
+            # Redact rectangle BELOW the trigger text
+            # From left to right, height pixels downward
+            signature_rect = fitz.Rect(
+                0,                      # x_start: Left edge
+                inst.y1,                # y_start: Below trigger text (y1 is bottom of trigger)
+                page.rect.width,        # x_end: Right edge
+                inst.y1 + height        # y_end: height pixels below
+            )
+            
+            page.add_redact_annot(signature_rect, fill=(0, 0, 0))
+            logging.getLogger(__name__).info(f"Redacted signature block at y={inst.y1}, height={height}")
     
     def _redact_pii_entities(self, page: fitz.Page, entities: List[PIIEntity], full_text: str, stats: dict):
         """Redact PII entities found by structured extraction.
