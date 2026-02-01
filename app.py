@@ -31,6 +31,196 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# ============================================
+# HELPER FUNCTIONS
+# ============================================
+
+def create_preview_with_zones(pdf_file, header_page1: int, footer_page1: int, footer_other: int) -> Image.Image:
+    """Erstellt Vorschau mit eingezeichneten Zonen.
+    
+    Args:
+        pdf_file: Uploaded PDF file object
+        header_page1: Height of header zone in pixels from top (Page 1)
+        footer_page1: Height of footer zone in pixels from bottom (Page 1)
+        footer_other: Height of footer zone in pixels from bottom (Pages 2+)
+        
+    Returns:
+        PIL Image with zone overlays
+    """
+    # Read PDF bytes and handle potential seek issues
+    pdf_bytes = pdf_file.read()
+    
+    # Reset file pointer if possible (for later use by other functions)
+    try:
+        pdf_file.seek(0)
+    except (AttributeError, io.UnsupportedOperation):
+        # If seek is not supported, that's okay - we already have the bytes
+        pass
+    
+    # Open PDF with PyMuPDF using the bytes we read
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page = doc[0]  # Get first page
+    
+    # Render page as image with 2x zoom for better quality
+    zoom = 2
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat)
+    
+    # Convert to PIL Image
+    img_data = pix.tobytes("png")
+    img = Image.open(io.BytesIO(img_data))
+    
+    # Create transparent overlay for zones
+    overlay = Image.new('RGBA', img.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(overlay)
+    
+    page_height = pix.height
+    page_width = pix.width
+    
+    # PDF coordinates are from bottom, but display is from top
+    # header_page1 is from top in PDF points (A4 = 842pt)
+    # Scale to actual image pixels
+    A4_HEIGHT = 842
+    header_y_end = int((header_page1 / A4_HEIGHT) * page_height)
+    
+    # Draw header zone (blue)
+    draw.rectangle(
+        [(0, 0), (page_width, header_y_end)],
+        fill=(0, 100, 255, 80),
+        outline=(0, 100, 255, 200),
+        width=3
+    )
+    
+    # Draw footer zone Page 1 (orange)
+    footer1_y_start = page_height - int((footer_page1 / A4_HEIGHT) * page_height)
+    draw.rectangle(
+        [(0, footer1_y_start), (page_width, page_height)],
+        fill=(255, 140, 0, 80),
+        outline=(255, 140, 0, 200),
+        width=3
+    )
+    
+    # Add text overlay for info
+    try:
+        from PIL import ImageFont
+        # Try common font paths across different operating systems
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+            "/System/Library/Fonts/Helvetica.ttc",  # macOS
+            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+        ]
+        font = None
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, 16)
+                break
+            except (OSError, IOError):
+                continue
+        if font is None:
+            font = ImageFont.load_default()
+    except (OSError, IOError):
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+    
+    draw.text((10, 10), f"Header: {header_page1}px", fill=(0, 100, 255, 255), font=font)
+    draw.text((10, page_height - 30), f"Footer Seite 1: {footer_page1}px", fill=(255, 140, 0, 255), font=font)
+    draw.text((10, page_height - 60), f"Footer Seite 2+: {footer_other}px", fill=(0, 200, 0, 255), font=font)
+    
+    # Combine original image with overlay
+    result = Image.alpha_composite(img.convert('RGBA'), overlay)
+    doc.close()
+    
+    return result.convert('RGB')
+
+
+def create_custom_template(
+    header_page1: int,
+    footer_page1: int,
+    footer_other: int,
+    signature_block_height: int,
+    shift_days: int = 0
+) -> dict:
+    """Erstellt Template-Dict aus User-Einstellungen mit separaten Zonen für Seite 1 vs. Folgeseiten.
+    
+    Args:
+        header_page1: Header height in pixels from top (Page 1 only)
+        footer_page1: Footer height in pixels from bottom (Page 1 only)
+        footer_other: Footer height in pixels from bottom (Pages 2+)
+        signature_block_height: Height below signature trigger to redact
+        shift_days: Days to shift dates (0 = random)
+        
+    Returns:
+        Dictionary with template configuration
+    """
+    # Load base template
+    template_path = Path(__file__).parent / 'templates' / 'german_clinical_default.json'
+    try:
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template = json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading template: {e}")
+        template = {
+            "template_name": "Custom",
+            "version": "2.0",
+            "zones": {},
+            "structured_patterns": {},
+            "date_handling": {},
+            "pii_mechanisms": {},
+            "image_pii_patterns": {}
+        }
+    
+    # A4 page height in points
+    A4_HEIGHT = 842
+    
+    # ======= ZONE 1: HEADER SEITE 1 =======
+    template['zones']['header_page_1'] = {
+        "page": 1,
+        "pages": None,
+        "y_start": A4_HEIGHT - header_page1,  # Convert from top to bottom
+        "y_end": A4_HEIGHT,
+        "redaction": "full",
+        "preserve_logos": False  # NO logo preservation!
+    }
+    
+    # ======= ZONE 2: FOOTER SEITE 1 =======
+    template['zones']['footer_page_1'] = {
+        "page": 1,
+        "pages": None,
+        "y_start": 0,
+        "y_end": footer_page1,
+        "redaction": "full",
+        "keywords": []  # No keyword search, ALWAYS redact everything
+    }
+    
+    # ======= ZONE 3: FOOTER FOLGESEITEN =======
+    template['zones']['footer_other_pages'] = {
+        "page": None,
+        "pages": "all",
+        "exclude_page": 1,  # All EXCEPT page 1
+        "y_start": 0,
+        "y_end": footer_other,
+        "redaction": "full"
+    }
+    
+    # ======= SIGNATUR-BLOCK CONFIG =======
+    template['signature_block'] = {
+        "enabled": True,
+        "trigger": "Mit freundlichen Grüßen",
+        "height_below": signature_block_height,
+        "redaction": "full"
+    }
+    
+    # ======= SHIFT-DAYS CONFIG =======
+    template['shift_days'] = shift_days if shift_days != 0 else None
+    
+    return template
+
+
+# ============================================
+# STREAMLIT APP CONFIGURATION
+# ============================================
+
 # Page configuration
 st.set_page_config(
     page_title="Redact Clinical German",
@@ -343,184 +533,3 @@ if not uploaded_files:
     - ✅ Konfigurierbare Anonymisierung
     - ✅ Statistiken pro Datei
     """)
-
-
-def create_preview_with_zones(pdf_file, header_page1: int, footer_page1: int, footer_other: int) -> Image.Image:
-    """Erstellt Vorschau mit eingezeichneten Zonen.
-    
-    Args:
-        pdf_file: Uploaded PDF file object
-        header_page1: Height of header zone in pixels from top (Page 1)
-        footer_page1: Height of footer zone in pixels from bottom (Page 1)
-        footer_other: Height of footer zone in pixels from bottom (Pages 2+)
-        
-    Returns:
-        PIL Image with zone overlays
-    """
-    # Read PDF bytes and handle potential seek issues
-    pdf_bytes = pdf_file.read()
-    
-    # Reset file pointer if possible (for later use by other functions)
-    try:
-        pdf_file.seek(0)
-    except (AttributeError, io.UnsupportedOperation):
-        # If seek is not supported, that's okay - we already have the bytes
-        pass
-    
-    # Open PDF with PyMuPDF using the bytes we read
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    page = doc[0]  # Get first page
-    
-    # Render page as image with 2x zoom for better quality
-    zoom = 2
-    mat = fitz.Matrix(zoom, zoom)
-    pix = page.get_pixmap(matrix=mat)
-    
-    # Convert to PIL Image
-    img_data = pix.tobytes("png")
-    img = Image.open(io.BytesIO(img_data))
-    
-    # Create transparent overlay for zones
-    overlay = Image.new('RGBA', img.size, (255, 255, 255, 0))
-    draw = ImageDraw.Draw(overlay)
-    
-    page_height = pix.height
-    page_width = pix.width
-    
-    # PDF coordinates are from bottom, but display is from top
-    # header_page1 is from top in PDF points (A4 = 842pt)
-    # Scale to actual image pixels
-    A4_HEIGHT = 842
-    header_y_end = int((header_page1 / A4_HEIGHT) * page_height)
-    
-    # Draw header zone (blue)
-    draw.rectangle(
-        [(0, 0), (page_width, header_y_end)],
-        fill=(0, 100, 255, 80),
-        outline=(0, 100, 255, 200),
-        width=3
-    )
-    
-    # Draw footer zone Page 1 (orange)
-    footer1_y_start = page_height - int((footer_page1 / A4_HEIGHT) * page_height)
-    draw.rectangle(
-        [(0, footer1_y_start), (page_width, page_height)],
-        fill=(255, 140, 0, 80),
-        outline=(255, 140, 0, 200),
-        width=3
-    )
-    
-    # Add text overlay for info
-    try:
-        from PIL import ImageFont
-        # Try common font paths across different operating systems
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-            "/System/Library/Fonts/Helvetica.ttc",  # macOS
-            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
-        ]
-        font = None
-        for font_path in font_paths:
-            try:
-                font = ImageFont.truetype(font_path, 16)
-                break
-            except (OSError, IOError):
-                continue
-        if font is None:
-            font = ImageFont.load_default()
-    except (OSError, IOError):
-        from PIL import ImageFont
-        font = ImageFont.load_default()
-    
-    draw.text((10, 10), f"Header: {header_page1}px", fill=(0, 100, 255, 255), font=font)
-    draw.text((10, page_height - 30), f"Footer Seite 1: {footer_page1}px", fill=(255, 140, 0, 255), font=font)
-    draw.text((10, page_height - 60), f"Footer Seite 2+: {footer_other}px", fill=(0, 200, 0, 255), font=font)
-    
-    # Combine original image with overlay
-    result = Image.alpha_composite(img.convert('RGBA'), overlay)
-    doc.close()
-    
-    return result.convert('RGB')
-
-
-def create_custom_template(
-    header_page1: int,
-    footer_page1: int,
-    footer_other: int,
-    signature_block_height: int,
-    shift_days: int = 0
-) -> dict:
-    """Erstellt Template-Dict aus User-Einstellungen mit separaten Zonen für Seite 1 vs. Folgeseiten.
-    
-    Args:
-        header_page1: Header height in pixels from top (Page 1 only)
-        footer_page1: Footer height in pixels from bottom (Page 1 only)
-        footer_other: Footer height in pixels from bottom (Pages 2+)
-        signature_block_height: Height below signature trigger to redact
-        shift_days: Days to shift dates (0 = random)
-        
-    Returns:
-        Dictionary with template configuration
-    """
-    # Load base template
-    template_path = Path(__file__).parent / 'templates' / 'german_clinical_default.json'
-    try:
-        with open(template_path, 'r', encoding='utf-8') as f:
-            template = json.load(f)
-    except Exception as e:
-        logger.error(f"Error loading template: {e}")
-        template = {
-            "template_name": "Custom",
-            "version": "2.0",
-            "zones": {},
-            "structured_patterns": {},
-            "date_handling": {},
-            "pii_mechanisms": {},
-            "image_pii_patterns": {}
-        }
-    
-    # A4 page height in points
-    A4_HEIGHT = 842
-    
-    # ======= ZONE 1: HEADER SEITE 1 =======
-    template['zones']['header_page_1'] = {
-        "page": 1,
-        "pages": None,
-        "y_start": A4_HEIGHT - header_page1,  # Convert from top to bottom
-        "y_end": A4_HEIGHT,
-        "redaction": "full",
-        "preserve_logos": False  # NO logo preservation!
-    }
-    
-    # ======= ZONE 2: FOOTER SEITE 1 =======
-    template['zones']['footer_page_1'] = {
-        "page": 1,
-        "pages": None,
-        "y_start": 0,
-        "y_end": footer_page1,
-        "redaction": "full",
-        "keywords": []  # No keyword search, ALWAYS redact everything
-    }
-    
-    # ======= ZONE 3: FOOTER FOLGESEITEN =======
-    template['zones']['footer_other_pages'] = {
-        "page": None,
-        "pages": "all",
-        "exclude_page": 1,  # All EXCEPT page 1
-        "y_start": 0,
-        "y_end": footer_other,
-        "redaction": "full"
-    }
-    
-    # ======= SIGNATUR-BLOCK CONFIG =======
-    template['signature_block'] = {
-        "enabled": True,
-        "trigger": "Mit freundlichen Grüßen",
-        "height_below": signature_block_height,
-        "redaction": "full"
-    }
-    
-    # ======= SHIFT-DAYS CONFIG =======
-    template['shift_days'] = shift_days if shift_days != 0 else None
-    
-    return template
