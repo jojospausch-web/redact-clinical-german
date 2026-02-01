@@ -413,8 +413,22 @@ def create_preview_with_zones(pdf_file, header_page1: int, footer_page1: int, fo
     # Add text overlay for info
     try:
         from PIL import ImageFont
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
-    except:
+        # Try common font paths across different operating systems
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+            "/System/Library/Fonts/Helvetica.ttc",  # macOS
+            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+        ]
+        font = None
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, 16)
+                break
+            except (OSError, IOError):
+                continue
+        if font is None:
+            font = ImageFont.load_default()
+    except (OSError, IOError):
         from PIL import ImageFont
         font = ImageFont.load_default()
     

@@ -22,7 +22,7 @@
   "structured_patterns": {
     "patient_block": {
       "pattern": "^(Herr|Frau)\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
-      "comment": "^ = only at line beginning, prevents 'Sehr geehrter Herr Kollege'",
+      "comment": "^ = only at line beginning (requires re.MULTILINE flag), prevents 'Sehr geehrter Herr Kollege'",
       "groups": {
         "1": "SALUTATION",
         "2": "LASTNAME",

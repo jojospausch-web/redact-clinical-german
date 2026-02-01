@@ -93,7 +93,9 @@ class TestSeparatePageZones:
             doc.save(temp_input)
             doc.close()
         
-        temp_output = tempfile.mktemp(suffix='.pdf')
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            temp_output = tmp.name
+        
         stats = anonymizer.anonymize_pdf(temp_input, temp_output)
         
         # Should only redact 1 zone (page 1 header)
@@ -142,7 +144,9 @@ class TestSeparatePageZones:
             doc.save(temp_input)
             doc.close()
         
-        temp_output = tempfile.mktemp(suffix='.pdf')
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            temp_output = tmp.name
+        
         stats = anonymizer.anonymize_pdf(temp_input, temp_output)
         
         # Should redact 3 zones total (1 for page 1, 2 for pages 2-3)
