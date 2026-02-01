@@ -165,3 +165,73 @@ class TestStructuredPIIExtractor:
         assert len(entities) == 2
         name = next(e for e in entities if e.entity_type == "NAME")
         assert name.text == "Müßiggang"
+    
+    def test_extract_postal_code_with_city(self):
+        """Test extraction of postal code with city name."""
+        patterns = {
+            "postal_code_with_city": PatternGroup(
+                pattern=r"(\d{5})\s+([A-ZÄÖÜ][a-zäöüß]+)",
+                groups={
+                    "1": "POSTAL_CODE",
+                    "2": "CITY"
+                }
+            )
+        }
+        extractor = StructuredPIIExtractor(patterns)
+        
+        text = "Wohnhaft in 37075 Göttingen"
+        entities = extractor.extract_pii(text)
+        
+        assert len(entities) == 2
+        
+        postal_code = next(e for e in entities if e.entity_type == "POSTAL_CODE")
+        assert postal_code.text == "37075"
+        
+        city = next(e for e in entities if e.entity_type == "CITY")
+        assert city.text == "Göttingen"
+    
+    def test_extract_postal_code_standalone(self):
+        """Test extraction of standalone postal code."""
+        patterns = {
+            "postal_code_standalone": PatternGroup(
+                pattern=r"(?:PLZ:?\s*)?(\d{5})(?!\d)",
+                type="POSTAL_CODE"
+            )
+        }
+        extractor = StructuredPIIExtractor(patterns)
+        
+        text = "PLZ: 20246"
+        entities = extractor.extract_pii(text)
+        
+        assert len(entities) == 1
+        assert entities[0].entity_type == "POSTAL_CODE"
+        assert entities[0].text == "20246"
+    
+    def test_extract_multiple_postal_codes(self):
+        """Test extraction of multiple postal codes in text."""
+        patterns = {
+            "postal_code_with_city": PatternGroup(
+                pattern=r"(\d{5})\s+([A-ZÄÖÜ][a-zäöüß]+)",
+                groups={
+                    "1": "POSTAL_CODE",
+                    "2": "CITY"
+                }
+            )
+        }
+        extractor = StructuredPIIExtractor(patterns)
+        
+        text = "Patient von 37075 Göttingen nach 20246 Hamburg verlegt"
+        entities = extractor.extract_pii(text)
+        
+        # Should find 2 postal codes and 2 cities
+        assert len(entities) == 4
+        
+        postal_codes = [e for e in entities if e.entity_type == "POSTAL_CODE"]
+        assert len(postal_codes) == 2
+        assert postal_codes[0].text == "37075"
+        assert postal_codes[1].text == "20246"
+        
+        cities = [e for e in entities if e.entity_type == "CITY"]
+        assert len(cities) == 2
+        assert cities[0].text == "Göttingen"
+        assert cities[1].text == "Hamburg"
