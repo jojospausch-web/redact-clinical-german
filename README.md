@@ -90,11 +90,48 @@ streamlit run app.py
 #### Web UI Features
 
 - ✅ **Drag & Drop Upload** mehrerer PDFs
+- ✅ **Interaktive Zonen-Anpassung** mit Live-Vorschau
+- ✅ **Postleitzahlen-Erkennung** (deutsche 5-stellige PLZ)
+- ✅ **Header/Footer-Slider** zur präzisen Anpassung
 - ✅ **Batch-Verarbeitung** mit Live-Progress
 - ✅ **Einzeldownload** jeder anonymisierten Datei
 - ✅ **ZIP-Download** aller Dateien auf einmal
 - ✅ **Konfigurierbar** (Template, Datum-Shift, Bilder)
 - ✅ **Statistiken** (Anzahl gefundener PII pro Datei)
+
+## 🎨 Interaktive Zonen-Anpassung (Streamlit UI)
+
+Die Web-UI bietet **Live-Vorschau** und individuelle Anpassung der Schwärzungs-Bereiche:
+
+### Features
+
+1. **Header-Slider**: Passe Header-Höhe zwischen 0-300 Pixel an
+2. **Footer-Slider**: Passe Footer-Höhe zwischen 0-200 Pixel an
+3. **Live-Vorschau**: Sehe sofort, welche Bereiche geschwärzt werden
+   - 🔵 **Blauer Bereich** = Header (oben)
+   - 🟠 **Oranger Bereich** = Footer (unten)
+4. **Header-Seiten-Auswahl**: Wähle zwischen "Nur Seite 1" oder "Allen Seiten"
+5. **Footer-Keywords**: Konfiguriere Keywords für keyword-basierte Footer-Schwärzung
+6. **Batch-Verarbeitung**: Einstellungen gelten für ALLE hochgeladenen PDFs
+7. **Postleitzahlen-Erkennung**: Deutsche PLZ (5-stellig) werden automatisch erkannt
+
+### Verwendung
+
+1. PDFs hochladen
+2. Header/Footer-Höhe mit Slidern anpassen
+3. Vorschau prüfen (blaue/orange Bereiche zeigen Schwärzungs-Zonen)
+4. "Anonymisierung starten" klicken
+5. Alle PDFs mit gleichen Einstellungen verarbeiten
+
+### Erkannte PII-Typen
+
+- **Namen**: Patienten, Ärzte, Überweiser
+- **Geburtsdaten**: *DD.MM.YYYY Format
+- **Adressen**: Straßen, Hausnummern, PLZ, Städte
+- **Postleitzahlen**: Deutsche 5-stellige PLZ (z.B. "37075 Göttingen", "PLZ: 12345")
+- **Fallnummern**: Pat.-Nr., Aufnahmenummer
+- **Bankdaten**: IBAN, BIC (in Footern)
+- **Orte/Kliniken**: Kontextbasierte Erkennung
 
 ### Command Line Interface (CLI)
 
@@ -187,6 +224,17 @@ The anonymization behavior is controlled by JSON templates. See `templates/germa
       "pattern": "(Prof\\.|Dr\\.|PD)\\s+(med\\.\\s+)?([A-ZÄÖÜ][a-zäöüß-]+(?:\\s+[A-ZÄÖÜ][a-zäöüß-]+)+)",
       "type": "DOCTOR_NAME",
       "lookahead": 200
+    },
+    "postal_code_with_city": {
+      "pattern": "(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+)",
+      "groups": {
+        "1": "POSTAL_CODE",
+        "2": "CITY"
+      }
+    },
+    "postal_code_standalone": {
+      "pattern": "(?:PLZ:?\\s*)?(\\d{5})(?!\\d)",
+      "type": "POSTAL_CODE"
     }
   }
 }
@@ -209,6 +257,12 @@ The system recognizes these structured patterns:
 ### Case Numbers
 - **Format**: `Pat.-Nr. 123456789` or `Pat-Nr.: 987654321`
 - **Extracted**: Case ID
+
+### Postal Codes (NEW)
+- **Format 1**: `37075 Göttingen` (PLZ + Stadt)
+- **Format 2**: `PLZ: 12345` or `12345` (standalone)
+- **Extracted**: Postal code and city name
+- **Note**: Uses negative lookahead `(?!\d)` to avoid matching 6+ digit numbers
 
 ### Addresses
 - **Format**: `Hauptstraße 123, 37075 Göttingen`
