@@ -103,9 +103,9 @@ def anonymize_pdf(
         
         for page_num, img_index, img in images:
             anonymized_img, redactions = image_anonymizer.anonymize_image(img)
-            output_img_path = anonymized_images_path / f"page{page_num}_img{img_index}_anonymized.png"
-            anonymized_img.save(output_img_path)
-            extracted_images.append(str(output_img_path))
+            anonymized_img_path = anonymized_images_path / f"page{page_num}_img{img_index}_anonymized.png"
+            anonymized_img.save(anonymized_img_path)
+            extracted_images.append(str(anonymized_img_path))
             
             if redactions:
                 logger.debug(f"Redacted {len(redactions)} regions in image {img_index} on page {page_num}")

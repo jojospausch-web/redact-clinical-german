@@ -12,6 +12,9 @@ import zipfile
 import io
 import logging
 import sys
+import tempfile
+import os
+import re
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -110,17 +113,23 @@ if uploaded_files:
         for idx, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Verarbeite {uploaded_file.name} ({idx+1}/{total})...")
             
-            # Save uploaded file temporarily
-            temp_input = Path(f"/tmp/{uploaded_file.name}")
+            # Sanitize filename to prevent path traversal attacks
+            safe_filename = re.sub(r'[^\w\s.-]', '_', uploaded_file.name)
+            safe_filename = os.path.basename(safe_filename)  # Remove any path components
+            
+            # Create unique temporary directory for this file
+            temp_dir = tempfile.mkdtemp(prefix='redact_')
+            temp_input = Path(temp_dir) / safe_filename
             temp_input.write_bytes(uploaded_file.read())
             
             # Create temp output directory
-            temp_output_dir = Path(f"/tmp/output_{idx}")
+            temp_output_dir = Path(temp_dir) / "output"
             temp_output_dir.mkdir(parents=True, exist_ok=True)
-            temp_output = temp_output_dir / f"anonymized_{uploaded_file.name}"
+            temp_output = temp_output_dir / f"anonymized_{safe_filename}"
             
             # Call anonymization
             try:
+                # shift_days: 0 means random shift (None triggers random behavior in backend)
                 result = anonymize_pdf(
                     input_path=str(temp_input),
                     template_path=template_file,
