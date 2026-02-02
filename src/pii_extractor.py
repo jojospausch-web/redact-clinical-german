@@ -1,8 +1,11 @@
 """Structured PII extraction using contextual regex patterns."""
 
 import re
+import logging
 from typing import List, Dict
 from src.config import PIIEntity, PatternGroup
+
+logger = logging.getLogger(__name__)
 
 
 class StructuredPIIExtractor:
@@ -20,6 +23,38 @@ class StructuredPIIExtractor:
             patterns: Dictionary of pattern configurations
         """
         self.patterns = patterns
+    
+    def _is_whole_word(self, text: str, match_start: int, match_end: int) -> bool:
+        """
+        Prüft ob ein Match ein ganzes Wort ist (keine Substring-Match).
+        
+        Args:
+            text: Gesamter Text
+            match_start: Start-Position des Match
+            match_end: End-Position des Match
+            
+        Returns:
+            True wenn ganzes Wort, False wenn Substring
+            
+        Examples:
+            "in Hamburg" → Match "Hamburg" → True (Leerzeichen davor/danach)
+            "Roshamburger" → Match "Hamburg" → False ('b' folgt direkt)
+        """
+        # Prüfe Zeichen VOR dem Match
+        if match_start > 0:
+            char_before = text[match_start - 1]
+            # Wenn alphanumerisch, ist es kein ganzes Wort
+            if char_before.isalnum():
+                return False
+        
+        # Prüfe Zeichen NACH dem Match
+        if match_end < len(text):
+            char_after = text[match_end]
+            # Wenn alphanumerisch, ist es kein ganzes Wort
+            if char_after.isalnum():
+                return False
+        
+        return True
     
     def extract_pii(self, text: str) -> List[PIIEntity]:
         """Extract PII entities from text using structured patterns.
@@ -76,6 +111,11 @@ class StructuredPIIExtractor:
                 start_pos = match.start(0)
                 end_pos = match.end(0)
             
+            # Apply word boundary check
+            if not self._is_whole_word(text, start_pos, end_pos):
+                logger.debug(f"Skipped substring match '{entity_text}' in pattern")
+                continue
+            
             entities.append(PIIEntity(
                 text=entity_text,
                 entity_type=config.type or "UNKNOWN",
@@ -106,11 +146,19 @@ class StructuredPIIExtractor:
                 if group_idx <= len(match.groups()):
                     entity_text = match.group(group_idx)
                     if entity_text:  # Only add non-empty groups
+                        # Apply word boundary check for each group
+                        start_pos = match.start(group_idx)
+                        end_pos = match.end(group_idx)
+                        
+                        if not self._is_whole_word(text, start_pos, end_pos):
+                            logger.debug(f"Skipped substring match '{entity_text}' in group {group_num}")
+                            continue
+                        
                         entities.append(PIIEntity(
                             text=entity_text,
                             entity_type=entity_type,
-                            start_pos=match.start(group_idx),
-                            end_pos=match.end(group_idx),
+                            start_pos=start_pos,
+                            end_pos=end_pos,
                             context=match.group(0)  # Full match as context
                         ))
         
@@ -146,6 +194,11 @@ class StructuredPIIExtractor:
             # Adjust positions relative to the full text
             actual_start = search_start + match.start(0)
             actual_end = search_start + match.end(0)
+            
+            # Apply word boundary check
+            if not self._is_whole_word(text, actual_start, actual_end):
+                logger.debug(f"Skipped substring match '{match.group(0)}' in context")
+                continue
             
             entities.append(PIIEntity(
                 text=match.group(0),

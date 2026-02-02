@@ -30,9 +30,10 @@ class TestTemplateLoading:
         template_path = "templates/german_clinical_default.json"
         config = load_and_validate_template(template_path)
         
-        # Check zones
-        assert "header" in config.zones
-        assert "footer" in config.zones
+        # Check zones - new zone names
+        assert "header_page_1" in config.zones
+        assert "footer_page_1" in config.zones
+        assert "footer_other_pages" in config.zones
         
         # Check date handling patterns
         assert "birthdate" in config.date_handling
