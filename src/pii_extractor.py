@@ -2,7 +2,7 @@
 
 import re
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 from src.config import PIIEntity, PatternGroup
 
 logger = logging.getLogger(__name__)

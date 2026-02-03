@@ -246,4 +246,31 @@ class TestGermanDateShifter:
         # December 25 + 10 days = January 4, 2024
         shifted = shifter.shift_date("25. Dezember 2023")
         assert "2024" in shifted
+    
+    def test_short_date_format_dd_mm(self):
+        """Test: Short date format DD.MM (without year) is parsed and shifted correctly."""
+        shifter = DateShifter(shift_days=10)
+        
+        # Test with context year
+        result = shifter.shift_date("05.08", context_year=2023)
+        assert result == "15.08"
+    
+    def test_short_date_preserves_format(self):
+        """Test: Short date format is preserved after shifting."""
+        shifter = DateShifter(shift_days=5)
+        
+        result = shifter.shift_date("21.08")
+        # Should still be in DD.MM format (no year)
+        assert "." in result
+        assert result.count(".") == 1  # Only one dot
+        assert len(result.split(".")) == 2  # Two parts
+    
+    def test_short_date_month_boundary(self):
+        """Test: Shifting across month boundary with short dates."""
+        shifter = DateShifter(shift_days=10)
+        
+        # August 25 + 10 days = September 4
+        result = shifter.shift_date("25.08", context_year=2023)
+        assert result == "04.09"
+
 
