@@ -25,6 +25,18 @@ class StructuredPIIExtractor:
         """
         self.patterns = patterns
         self.whitelist = whitelist
+        
+        # Pre-process whitelist for performance (convert to lowercase set for O(1) lookups)
+        self._whitelist_terms_lower = set()
+        if whitelist:
+            self._whitelist_terms_lower = set(
+                term.lower() 
+                for term in (
+                    whitelist.medical_terms + 
+                    whitelist.anatomical_terms + 
+                    whitelist.device_names
+                )
+            )
     
     def _is_whole_word(self, text: str, match_start: int, match_end: int) -> bool:
         """
@@ -70,18 +82,8 @@ class StructuredPIIExtractor:
         if not self.whitelist:
             return False
         
-        # Case-insensitive matching
-        entity_lower = entity_text.lower()
-        
-        # Collect all whitelist terms
-        all_whitelist_terms = (
-            [term.lower() for term in self.whitelist.medical_terms] +
-            [term.lower() for term in self.whitelist.anatomical_terms] +
-            [term.lower() for term in self.whitelist.device_names]
-        )
-        
-        # Check if entity is in whitelist
-        return entity_lower in all_whitelist_terms
+        # Use pre-computed lowercase set for O(1) lookup
+        return entity_text.lower() in self._whitelist_terms_lower
     
     def extract_pii(self, text: str) -> List[PIIEntity]:
         """Extract PII entities from text using structured patterns.
