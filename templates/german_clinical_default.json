@@ -108,6 +108,42 @@
         "2": "FACILITY_FULL_NAME"
       },
       "type": "MEDICAL_FACILITY"
+    },
+    "date_range": {
+      "pattern": "(\\d{1,2})\\.(\\d{1,2})\\s+bis\\s+zum\\s+(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})",
+      "comment": "Datumsbereich: '05.08 bis zum 21.08.2023'",
+      "groups": {
+        "1": "DATE",
+        "2": "DATE",
+        "3": "DATE",
+        "4": "DATE",
+        "5": "DATE"
+      }
+    },
+    "german_full_date": {
+      "pattern": "\\b(\\d{1,2})\\. (Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember) (\\d{4})\\b",
+      "type": "DATE",
+      "comment": "Ausgeschriebener Monat: '16. August 2023'"
+    },
+    "german_abbr_date": {
+      "pattern": "\\b(\\d{1,2})\\. (Jan|Feb|Mär|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez)\\.? (\\d{4})\\b",
+      "type": "DATE",
+      "comment": "Abgekürzter Monat: '16. Aug. 2023'"
+    },
+    "date_with_context_full": {
+      "pattern": "(?:vom|bis|am|seit|zum)\\s+(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})",
+      "type": "DATE",
+      "comment": "Datum mit Kontext: 'vom 16.08.2023'"
+    },
+    "date_with_context_short": {
+      "pattern": "(?:vom|bis|am|seit|zum)\\s+(\\d{1,2})\\.(\\d{1,2})(?!\\.\\d{4})",
+      "type": "DATE",
+      "comment": "Kurzdatum mit Kontext: 'vom 05.08' (Jahr fehlt)"
+    },
+    "date_numeric_full": {
+      "pattern": "\\b(\\d{2})\\.(\\d{2})\\.(\\d{4})\\b",
+      "type": "DATE",
+      "comment": "Vollständiges Datum: 21.08.2023"
     }
   },
   

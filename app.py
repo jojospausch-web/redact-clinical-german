@@ -8,6 +8,7 @@ of anonymized medical documents (PDFs).
 
 import streamlit as st
 from pathlib import Path
+from typing import List
 import zipfile
 import io
 import logging
@@ -139,7 +140,10 @@ def create_custom_template(
     footer_page1: int,
     footer_other: int,
     signature_block_height: int,
-    shift_days: int = 0
+    shift_days: int = 0,
+    whitelist_medical: List[str] = None,
+    whitelist_anatomical: List[str] = None,
+    whitelist_devices: List[str] = None
 ) -> dict:
     """Erstellt Template-Dict aus User-Einstellungen mit separaten Zonen für Seite 1 vs. Folgeseiten.
     
@@ -149,6 +153,9 @@ def create_custom_template(
         footer_other: Footer height in PDF points from bottom (Pages 2+)
         signature_block_height: Height below signature trigger to redact in PDF points
         shift_days: Days to shift dates (0 = random)
+        whitelist_medical: List of medical terms to exclude from redaction
+        whitelist_anatomical: List of anatomical terms to exclude from redaction
+        whitelist_devices: List of device/product names to exclude from redaction
         
     Returns:
         Dictionary with template configuration
@@ -214,6 +221,14 @@ def create_custom_template(
     # ======= SHIFT-DAYS CONFIG =======
     template['shift_days'] = shift_days if shift_days != 0 else None
     
+    # ======= WHITELIST CONFIG =======
+    if whitelist_medical or whitelist_anatomical or whitelist_devices:
+        template['whitelist'] = {
+            "medical_terms": whitelist_medical or [],
+            "anatomical_terms": whitelist_anatomical or [],
+            "device_names": whitelist_devices or []
+        }
+    
     return template
 
 
@@ -274,6 +289,54 @@ with st.sidebar:
         value=True,
         help="Bilder separat speichern und anonymisieren"
     )
+    
+    st.divider()
+    
+    # ===== WHITELIST =====
+    st.header("🛡️ Whitelist")
+    st.markdown("**Begriffe, die NICHT anonymisiert werden**")
+    
+    with st.expander("📋 Whitelist bearbeiten", expanded=False):
+        st.markdown("""
+        Geben Sie Begriffe ein, die **nicht** geschwärzt oder verschoben werden sollen.
+        Ein Begriff pro Zeile.
+        """)
+        
+        whitelist_medical = st.text_area(
+            "Medizinische Begriffe",
+            value="",
+            height=100,
+            help="z.B. Medtronic, Edwards Sapien, Aortenklappe",
+            key="whitelist_medical"
+        )
+        
+        whitelist_anatomical = st.text_area(
+            "Anatomische Begriffe",
+            value="",
+            height=100,
+            help="z.B. Aortenklappe, Herzklappe, Mitralklappe",
+            key="whitelist_anatomical"
+        )
+        
+        whitelist_devices = st.text_area(
+            "Geräte/Produkte",
+            value="",
+            height=100,
+            help="z.B. Medtronic Evolut FX, Edwards Sapien 3",
+            key="whitelist_devices"
+        )
+        
+        # Info über aktive Whitelist
+        total_whitelist = sum([
+            len([t for t in whitelist_medical.split('\n') if t.strip()]),
+            len([t for t in whitelist_anatomical.split('\n') if t.strip()]),
+            len([t for t in whitelist_devices.split('\n') if t.strip()])
+        ])
+        
+        if total_whitelist > 0:
+            st.success(f"✅ {total_whitelist} Begriffe auf der Whitelist")
+        else:
+            st.info("ℹ️ Whitelist ist leer")
     
     st.divider()
     
@@ -371,7 +434,7 @@ if uploaded_files:
             footer_other=footer_other
         )
         
-        st.image(preview_image, caption=f"Vorschau: {uploaded_files[0].name}", use_column_width=True)
+        st.image(preview_image, caption=f"Vorschau: {uploaded_files[0].name}", use_container_width=True)
         
         st.info(f"🔵 **Blauer Bereich** = Header Seite 1 ({header_page1}px von oben) | "
                 f"🟠 **Oranger Bereich** = Footer Seite 1 ({footer_page1}px von unten) | "
@@ -387,13 +450,21 @@ if uploaded_files:
         # Clear previous results
         st.session_state['results'] = []
         
+        # Parse whitelist
+        medical_terms = [term.strip() for term in whitelist_medical.split('\n') if term.strip()]
+        anatomical_terms = [term.strip() for term in whitelist_anatomical.split('\n') if term.strip()]
+        device_names = [term.strip() for term in whitelist_devices.split('\n') if term.strip()]
+        
         # Create custom template from user settings
         custom_template = create_custom_template(
             header_page1=header_page1,
             footer_page1=footer_page1,
             footer_other=footer_other,
             signature_block_height=signature_block_height,
-            shift_days=shift_days
+            shift_days=shift_days,
+            whitelist_medical=medical_terms,
+            whitelist_anatomical=anatomical_terms,
+            whitelist_devices=device_names
         )
         
         # Save custom template to temp file
