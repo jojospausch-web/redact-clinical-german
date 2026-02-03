@@ -235,3 +235,129 @@ class TestStructuredPIIExtractor:
         assert len(cities) == 2
         assert cities[0].text == "Göttingen"
         assert cities[1].text == "Hamburg"
+
+
+class TestWhitelistFunctionality:
+    """Test cases for whitelist functionality."""
+    
+    def test_whitelist_excludes_medical_terms(self):
+        """Test that whitelisted medical terms are not extracted as PII."""
+        from src.config import WhitelistConfig
+        
+        patterns = {
+            "medical_facility": PatternGroup(
+                pattern=r"\b(Medtronic|Edwards)\b",
+                type="DEVICE"
+            )
+        }
+        
+        whitelist = WhitelistConfig(
+            medical_terms=["Medtronic"],
+            anatomical_terms=[],
+            device_names=[]
+        )
+        
+        extractor = StructuredPIIExtractor(patterns, whitelist)
+        
+        text = "Implantation einer Medtronic Klappe und Edwards Sapien"
+        entities = extractor.extract_pii(text)
+        
+        # Medtronic should be whitelisted, Edwards should be extracted
+        assert len(entities) == 1
+        assert entities[0].text == "Edwards"
+    
+    def test_whitelist_case_insensitive(self):
+        """Test that whitelist matching is case-insensitive."""
+        from src.config import WhitelistConfig
+        
+        patterns = {
+            "device": PatternGroup(
+                pattern=r"\b(medtronic|MEDTRONIC|Medtronic)\b",
+                type="DEVICE"
+            )
+        }
+        
+        whitelist = WhitelistConfig(
+            medical_terms=["medtronic"],  # lowercase in whitelist
+            anatomical_terms=[],
+            device_names=[]
+        )
+        
+        extractor = StructuredPIIExtractor(patterns, whitelist)
+        
+        # All variations should be whitelisted
+        text = "medtronic MEDTRONIC Medtronic"
+        entities = extractor.extract_pii(text)
+        
+        assert len(entities) == 0
+    
+    def test_whitelist_anatomical_terms(self):
+        """Test that whitelisted anatomical terms are not extracted."""
+        from src.config import WhitelistConfig
+        
+        patterns = {
+            "anatomical": PatternGroup(
+                pattern=r"\b(Aortenklappe|Herzklappe)\b",
+                type="ANATOMY"
+            )
+        }
+        
+        whitelist = WhitelistConfig(
+            medical_terms=[],
+            anatomical_terms=["Aortenklappe"],
+            device_names=[]
+        )
+        
+        extractor = StructuredPIIExtractor(patterns, whitelist)
+        
+        text = "Erkrankung der Aortenklappe und Herzklappe"
+        entities = extractor.extract_pii(text)
+        
+        # Aortenklappe whitelisted, Herzklappe extracted
+        assert len(entities) == 1
+        assert entities[0].text == "Herzklappe"
+    
+    def test_whitelist_device_names(self):
+        """Test that whitelisted device names are not extracted."""
+        from src.config import WhitelistConfig
+        
+        patterns = {
+            "device": PatternGroup(
+                pattern=r"\b(Edwards Sapien|Medtronic Evolut)\b",
+                type="DEVICE"
+            )
+        }
+        
+        whitelist = WhitelistConfig(
+            medical_terms=[],
+            anatomical_terms=[],
+            device_names=["Edwards Sapien"]
+        )
+        
+        extractor = StructuredPIIExtractor(patterns, whitelist)
+        
+        text = "Verwendung von Edwards Sapien und Medtronic Evolut"
+        entities = extractor.extract_pii(text)
+        
+        # Edwards Sapien whitelisted, Medtronic Evolut extracted
+        assert len(entities) == 1
+        assert entities[0].text == "Medtronic Evolut"
+    
+    def test_no_whitelist_all_extracted(self):
+        """Test that without whitelist, all matching patterns are extracted."""
+        patterns = {
+            "device": PatternGroup(
+                pattern=r"\b(Medtronic|Edwards)\b",
+                type="DEVICE"
+            )
+        }
+        
+        # No whitelist provided
+        extractor = StructuredPIIExtractor(patterns, whitelist=None)
+        
+        text = "Medtronic und Edwards"
+        entities = extractor.extract_pii(text)
+        
+        # Both should be extracted
+        assert len(entities) == 2
+

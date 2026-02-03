@@ -63,11 +63,12 @@ class DateShifter:
         
         self._shifted_dates: Dict[str, str] = {}
     
-    def parse_german_date(self, date_str: str) -> Optional[datetime]:
+    def parse_german_date(self, date_str: str, context_year: Optional[int] = None) -> Optional[datetime]:
         """Parse various German date formats.
         
         Args:
             date_str: Date string to parse
+            context_year: Year to use for short dates (DD.MM) if not provided, uses current year
         
         Returns:
             datetime object or None if parsing fails
@@ -99,9 +100,22 @@ class DateShifter:
             except ValueError:
                 return None
         
-        # Format 3: "November 2023" (without day, use day 1)
-        pattern3 = r'\b([A-Za-zä]+\.?)\s+(\d{4})\b'
-        match = re.search(pattern3, date_str, re.IGNORECASE)
+        # Format 3: "05.11" (short date without year)
+        pattern3 = r'^(\d{1,2})\.(\d{1,2})$'
+        match = re.search(pattern3, date_str)
+        if match:
+            try:
+                day = int(match.group(1))
+                month = int(match.group(2))
+                # Use context year or current year
+                year = context_year if context_year else datetime.now().year
+                return datetime(year, month, day)
+            except ValueError:
+                return None
+        
+        # Format 4: "November 2023" (without day, use day 1)
+        pattern4 = r'\b([A-Za-zä]+\.?)\s+(\d{4})\b'
+        match = re.search(pattern4, date_str, re.IGNORECASE)
         if match:
             month_name = match.group(1).lower().rstrip('.')
             year = int(match.group(2))
@@ -112,17 +126,19 @@ class DateShifter:
         
         return None
     
-    def shift_date(self, date_str: str, date_format: str = "%d.%m.%Y") -> str:
+    def shift_date(self, date_str: str, date_format: str = "%d.%m.%Y", context_year: Optional[int] = None) -> str:
         """Shift a date string by the configured offset.
         
         Supports multiple formats:
         - "5. November 2023" → "30. November 2023"
         - "5. Nov. 2023" → "30. Nov. 2023"
         - "05.11.2023" → "30.11.2023"
+        - "05.08" → "15.08" (short date without year)
         
         Args:
             date_str: Date string to shift (e.g., "01.12.2023")
             date_format: Expected date format (default: DD.MM.YYYY)
+            context_year: Year to use for short dates (DD.MM) if not in date_str
         
         Returns:
             Shifted date string in the same format
@@ -132,26 +148,30 @@ class DateShifter:
             return self._shifted_dates[date_str]
         
         # Try parsing as German date first
-        date_obj = self.parse_german_date(date_str)
+        date_obj = self.parse_german_date(date_str, context_year)
         
         if date_obj:
             # Shift the date
             shifted = date_obj + timedelta(days=self.shift_days)
             
             # Detect original format and format accordingly
+            # Format 1: "05.08" (short date without year)
+            if re.search(r'^\d{1,2}\.\d{1,2}$', date_str):
+                result = f"{shifted.day:02d}.{shifted.month:02d}"
+            
             # Format 2: "5. Nov. 2023" (abbreviated month) - check this first
-            if re.search(r'\d{1,2}\.\s+[A-Za-zä]{3}\.?\s+\d{4}', date_str):
+            elif re.search(r'\d{1,2}\.\s+[A-Za-zä]{3}\.?\s+\d{4}', date_str):
                 result = f"{shifted.day}. {self.MONTH_ABBR[shifted.month]}. {shifted.year}"
             
-            # Format 1: "5. November 2023" (full month name)
+            # Format 3: "5. November 2023" (full month name)
             elif re.search(r'\d{1,2}\.\s+[A-Za-zä]{4,}\s+\d{4}', date_str):
                 result = f"{shifted.day}. {self.MONTH_NAMES[shifted.month]} {shifted.year}"
             
-            # Format 3: "05.11.2023" (numeric)
+            # Format 4: "05.11.2023" (numeric)
             elif re.search(r'^\d{2}\.\d{2}\.\d{4}$', date_str):
                 result = shifted.strftime("%d.%m.%Y")
             
-            # Format 4: "November 2023" (month only)
+            # Format 5: "November 2023" (month only)
             elif re.search(r'[A-Za-zä]+\.?\s+\d{4}', date_str):
                 result = f"{self.MONTH_NAMES[shifted.month]} {shifted.year}"
             

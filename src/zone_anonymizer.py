@@ -26,7 +26,9 @@ class ZoneBasedAnonymizer:
             date_shifter: Optional date shifter for date anonymization
         """
         self.template = template
-        self.pii_extractor = StructuredPIIExtractor(template.structured_patterns)
+        # Pass whitelist to the PII extractor
+        whitelist = template.whitelist if hasattr(template, 'whitelist') else None
+        self.pii_extractor = StructuredPIIExtractor(template.structured_patterns, whitelist)
         self.image_extractor = ImageExtractor()
         self.date_shifter = date_shifter or DateShifter()
     

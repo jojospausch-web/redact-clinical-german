@@ -2,7 +2,7 @@
 
 import re
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 from src.config import PIIEntity, PatternGroup
 
 logger = logging.getLogger(__name__)
@@ -16,13 +16,27 @@ class StructuredPIIExtractor:
     Medical terms are never checked against any whitelist.
     """
     
-    def __init__(self, patterns: Dict[str, PatternGroup]):
+    def __init__(self, patterns: Dict[str, PatternGroup], whitelist: Optional['WhitelistConfig'] = None):
         """Initialize with structured patterns from configuration.
         
         Args:
             patterns: Dictionary of pattern configurations
+            whitelist: Optional whitelist of terms to exclude from redaction
         """
         self.patterns = patterns
+        self.whitelist = whitelist
+        
+        # Pre-process whitelist for performance (convert to lowercase set for O(1) lookups)
+        self._whitelist_terms_lower = set()
+        if whitelist:
+            self._whitelist_terms_lower = set(
+                term.lower() 
+                for term in (
+                    whitelist.medical_terms + 
+                    whitelist.anatomical_terms + 
+                    whitelist.device_names
+                )
+            )
     
     def _is_whole_word(self, text: str, match_start: int, match_end: int) -> bool:
         """
@@ -55,6 +69,21 @@ class StructuredPIIExtractor:
                 return False
         
         return True
+    
+    def _is_whitelisted(self, entity_text: str) -> bool:
+        """Check if an entity text is on the whitelist.
+        
+        Args:
+            entity_text: The text to check
+            
+        Returns:
+            True if the text is whitelisted, False otherwise
+        """
+        if not self.whitelist:
+            return False
+        
+        # Use pre-computed lowercase set for O(1) lookup
+        return entity_text.lower() in self._whitelist_terms_lower
     
     def extract_pii(self, text: str) -> List[PIIEntity]:
         """Extract PII entities from text using structured patterns.
@@ -116,6 +145,11 @@ class StructuredPIIExtractor:
                 logger.debug(f"Skipped substring match '{entity_text}' in pattern")
                 continue
             
+            # Check whitelist
+            if self._is_whitelisted(entity_text):
+                logger.debug(f"Skipped whitelisted term: {entity_text}")
+                continue
+            
             entities.append(PIIEntity(
                 text=entity_text,
                 entity_type=config.type or "UNKNOWN",
@@ -152,6 +186,11 @@ class StructuredPIIExtractor:
                         
                         if not self._is_whole_word(text, start_pos, end_pos):
                             logger.debug(f"Skipped substring match '{entity_text}' in group {group_num}")
+                            continue
+                        
+                        # Check whitelist
+                        if self._is_whitelisted(entity_text):
+                            logger.debug(f"Skipped whitelisted term: {entity_text}")
                             continue
                         
                         entities.append(PIIEntity(
@@ -198,6 +237,11 @@ class StructuredPIIExtractor:
             # Apply word boundary check
             if not self._is_whole_word(text, actual_start, actual_end):
                 logger.debug(f"Skipped substring match '{match.group(0)}' in context")
+                continue
+            
+            # Check whitelist
+            if self._is_whitelisted(match.group(0)):
+                logger.debug(f"Skipped whitelisted term: {match.group(0)}")
                 continue
             
             entities.append(PIIEntity(
