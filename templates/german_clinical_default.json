@@ -3,19 +3,29 @@
   "version": "2.0.0",
   
   "zones": {
-    "header": {
+    "header_page_1": {
       "page": 1,
-      "y_start": 0,
-      "y_end": 120,
-      "redaction": "full",
-      "preserve_logos": true
-    },
-    "footer": {
-      "pages": "all",
-      "y_start": 750,
+      "pages": null,
+      "y_start": 562,
       "y_end": 842,
-      "redaction": "keyword_based",
-      "keywords": ["IBAN", "Bankverbindung", "Sparkasse", "BIC", "Stiftung", "Vorstand"]
+      "redaction": "full",
+      "preserve_logos": false
+    },
+    "footer_page_1": {
+      "page": 1,
+      "pages": null,
+      "y_start": 0,
+      "y_end": 35,
+      "redaction": "full",
+      "keywords": []
+    },
+    "footer_other_pages": {
+      "page": null,
+      "pages": "all",
+      "exclude_page": 1,
+      "y_start": 0,
+      "y_end": 80,
+      "redaction": "full"
     }
   },
   
@@ -73,6 +83,31 @@
     "postal_code_standalone": {
       "pattern": "(?:PLZ:?\\s*)?(\\d{5})(?!\\d)",
       "type": "POSTAL_CODE"
+    },
+    "city_facility_simple": {
+      "pattern": "\\b([A-ZÄÖÜ][a-zäöüß]+er)\\s+(Klinikum|Krankenhaus|Klinik|MVZ|Herzzentrum|Tumorzentrum|Lungenzentrum)\\b",
+      "comment": "Stadt-Adjektiv + einfache Einrichtung: 'Einbecker Krankenhaus'",
+      "groups": {
+        "1": "CITY_ADJECTIVE",
+        "2": "FACILITY_TYPE"
+      }
+    },
+    "university_hospital": {
+      "pattern": "\\b(Universitätsklinikum|Uniklinikum|UKE)\\s+([A-ZÄÖÜ][a-zäöüß-]+(?:\\s+[A-ZÄÖÜ][a-zäöüß-]+)?)",
+      "comment": "Universitätsklinikum + Stadt: 'Universitätsklinikum Göttingen'",
+      "groups": {
+        "1": "FACILITY_TYPE",
+        "2": "CITY"
+      }
+    },
+    "medical_facility_with_city": {
+      "pattern": "\\b([A-ZÄÖÜ][a-zäöüß]+er)\\s+([A-ZÄÖÜ][^.]{0,60}(?:Klinik|Krankenhaus|Hospital|Zentrum|Haus|MVZ)(?:[^.]{0,30})?)",
+      "comment": "Generische Einrichtung mit Stadt-Adjektiv: 'Hamburger Herzzentrum', 'Göttinger Haus'",
+      "groups": {
+        "1": "CITY_ADJECTIVE",
+        "2": "FACILITY_FULL_NAME"
+      },
+      "type": "MEDICAL_FACILITY"
     }
   },
   
@@ -148,7 +183,10 @@
     "SALUTATION": "redact",
     "LASTNAME": "redact",
     "FIRSTNAME": "redact",
-    "POSTAL_CODE": "redact"
+    "POSTAL_CODE": "redact",
+    "CITY_ADJECTIVE": "redact",
+    "FACILITY_TYPE": "redact",
+    "FACILITY_FULL_NAME": "redact"
   },
   
   "image_pii_patterns": {

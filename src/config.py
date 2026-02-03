@@ -4,6 +4,15 @@ from typing import Dict, List, Optional, Tuple, Any
 from pydantic import BaseModel, Field, ConfigDict
 
 
+class WhitelistConfig(BaseModel):
+    """Whitelist für Begriffe, die NICHT redaktiert werden sollen."""
+    model_config = ConfigDict(extra='allow')
+    
+    medical_terms: List[str] = Field(default_factory=list)
+    anatomical_terms: List[str] = Field(default_factory=list)
+    device_names: List[str] = Field(default_factory=list)
+
+
 class ZoneConfig(BaseModel):
     """Configuration for a PDF zone (header, footer, etc.)."""
     model_config = ConfigDict(extra='allow')
@@ -64,6 +73,7 @@ class AnonymizationTemplate(BaseModel):
     shift_days: Optional[int] = None
     location_anonymization: Optional[Dict[str, Any]] = None
     pii_mechanisms: Optional[Dict[str, str]] = None
+    whitelist: Optional[WhitelistConfig] = None
     info: Optional[str] = None
 
 
