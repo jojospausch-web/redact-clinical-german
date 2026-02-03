@@ -151,7 +151,7 @@ Function ShiftDateFull(dateStr As String, days As Integer) As String
     dateVal = DateSerial(y, m, d)
     dateVal = DateAdd("d", days, dateVal)
     
-    ShiftDateFull = Format(dateVal, "dd.mm.yyyy")
+    ShiftDateFull = Format(Day(dateVal), "00") & "." & Format(Month(dateVal), "00") & "." & Year(dateVal)
 End Function
 
 Function ShiftDateShort(dateStr As String, days As Integer) As String
@@ -169,7 +169,7 @@ Function ShiftDateShort(dateStr As String, days As Integer) As String
     dateVal = DateAdd("d", days, dateVal)
     
     ' Gebe nur DD.MM zurück (ohne Jahr)
-    ShiftDateShort = Format(dateVal, "dd.mm")
+    ShiftDateShort = Format(Day(dateVal), "00") & "." & Format(Month(dateVal), "00")
 End Function
 
 Function ShiftDateGermanFull(dateStr As String, days As Integer) As String
