@@ -177,8 +177,8 @@ def create_custom_template(
     template['zones']['header_page_1'] = {
         "page": 1,
         "pages": None,
-        "y_start": A4_HEIGHT - header_page1,  # Convert from top to bottom
-        "y_end": A4_HEIGHT,
+        "y_start": 0,  # Convert from top to bottom
+        "y_end": header_page1,
         "redaction": "full",
         "preserve_logos": False  # NO logo preservation!
     }
@@ -187,8 +187,8 @@ def create_custom_template(
     template['zones']['footer_page_1'] = {
         "page": 1,
         "pages": None,
-        "y_start": 0,
-        "y_end": footer_page1,
+        "y_start": A4_HEIGHT - footer_page1,
+        "y_end": A4_HEIGHT,
         "redaction": "full",
         "keywords": []  # No keyword search, ALWAYS redact everything
     }
@@ -198,8 +198,8 @@ def create_custom_template(
         "page": None,
         "pages": "all",
         "exclude_page": 1,  # All EXCEPT page 1
-        "y_start": 0,
-        "y_end": footer_other,
+        "y_start": A4_HEIGHT - footer_other,
+        "y_end": A4_HEIGHT,
         "redaction": "full"
     }
     
