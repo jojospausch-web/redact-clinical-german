@@ -246,24 +246,46 @@ The system recognizes German cities **ONLY** in specific contexts to avoid false
 - **12+ major medical facilities** (university hospitals, MVZs)
 - **Blacklist support** for special cases (e.g., "UKE" without context)
 
-### German Month Names Support
+### Date-Handling
 
-Supports date shifting with format preservation:
+**Birthdate Shifting (Automatic):**
+- Birthdate in format `*DD.MM.YYYY` is automatically shifted by a random offset
+- Example: `*01.01.1960` → `*15.01.1960` (shifted by +14 days)
+- Format is preserved after shifting
 
-**Supported Formats:**
-- `"5. November 2023"` → shifted with full month name preserved
-- `"5. Nov. 2023"` → abbreviations maintained
-- `"05.11.2023"` → numeric format preserved
+**Treatment/Visit Dates (Manual Excel Workflow):**
+- Regular dates (without `*`) remain **unchanged** in the anonymized PDF
+- **Recommended workflow:**
+  1. ✅ Anonymize PDF (names, addresses removed; dates unchanged)
+  2. ✅ Copy text from PDF to Excel
+  3. ✅ Use provided VBA macro for date-shifting in Excel
+  4. ✅ This avoids visual artifacts and positioning issues in PDF
 
-**Example:**
-```python
-# Original: "Patient aufgenommen am 5. November 2023"
-# Shifted (+25 days): "Patient aufgenommen am 30. November 2023"
-```
+**Why Excel instead of PDF shifting?**
+- ❌ PDF date-shifting can create white holes in headers/footers
+- ❌ Font and positioning problems
+- ❌ Incomplete pattern matches (e.g., "05.08" without year)
+- ✅ Excel offers reliable text replacement without visual artifacts
 
-**All German months recognized:**
-- Full names: Januar, Februar, März, April, Mai, Juni, Juli, August, September, Oktober, November, Dezember
-- Abbreviations: Jan., Feb., Mär., Apr., Mai, Jun., Jul., Aug., Sep., Okt., Nov., Dez.
+### Excel Date-Shifting Macro
+
+For shifting treatment dates after PDF anonymization:
+
+1. **Copy** text from anonymized PDF to Excel
+2. **Save** Excel file as `.xlsm` (macro-enabled)
+3. **Install** VBA macro from `docs/excel_date_shifter.vba`
+4. **Configure** shift offset (e.g., `SHIFT_DAYS = 15`)
+5. **Select** cells with dates and run macro (Alt + F8)
+
+**Supported date formats in Excel macro:**
+- `21.08.2023` → Full dates (DD.MM.YYYY)
+- `vom 05.08` → Short dates (DD.MM)
+- `5. November 2023` → German month names (full)
+- `5. Nov. 2023` → German month names (abbreviated)
+
+**Complete guide:** See [docs/excel_date_shifting_guide.md](docs/excel_date_shifting_guide.md)
+
+**VBA code:** [docs/excel_date_shifter.vba](docs/excel_date_shifter.vba)
 
 ### Configuration
 
