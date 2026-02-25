@@ -1,0 +1,16 @@
+{
+  "name": "Standard",
+  "created": "2026-02-25T05:07:00Z",
+  "zones": {
+    "header_page1": 380,
+    "footer_page1": 130,
+    "footer_next": 110,
+    "signature": 150,
+    "personal": 100
+  },
+  "whitelist": {
+    "medical": ["CT", "MRT", "Angiographie"],
+    "anatomical": ["Herz", "Lunge", "Leber"],
+    "devices": ["Stent", "Katheter", "Defibrillator"]
+  }
+}

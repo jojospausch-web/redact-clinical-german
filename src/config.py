@@ -57,6 +57,16 @@ class SignatureBlockConfig(BaseModel):
     redaction: str = "full"
 
 
+class PersonalBlockConfig(BaseModel):
+    """Configuration for Personal: block redaction."""
+    model_config = ConfigDict(extra='allow')
+
+    enabled: bool = True
+    trigger: str = "Personal:"
+    height_below: int = 100
+    redaction: str = "full"
+
+
 class AnonymizationTemplate(BaseModel):
     """Main configuration template for anonymization rules."""
     model_config = ConfigDict(extra='allow')
@@ -70,6 +80,7 @@ class AnonymizationTemplate(BaseModel):
     
     # Optional fields for additional configurations
     signature_block: Optional[SignatureBlockConfig] = None
+    personal_block: Optional[PersonalBlockConfig] = None
     shift_days: Optional[int] = None
     location_anonymization: Optional[Dict[str, Any]] = None
     pii_mechanisms: Optional[Dict[str, str]] = None

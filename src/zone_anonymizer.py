@@ -67,6 +67,9 @@ class ZoneBasedAnonymizer:
             # 2. Apply signature block redaction
             self._redact_signature_blocks(page)
             
+            # 2b. Apply personal block redaction
+            self._redact_personal_blocks(page)
+            
             # 3. Extract and analyze text for structured PII
             text = page.get_text()
             pii_entities = self.pii_extractor.extract_pii(text)
@@ -239,6 +242,37 @@ class ZoneBasedAnonymizer:
             
             page.add_redact_annot(signature_rect, fill=(0, 0, 0))
             logging.getLogger(__name__).info(f"Redacted signature block at y={inst.y1}, height={height}")
+    
+    def _redact_personal_blocks(self, page: fitz.Page):
+        """Redact complete block AFTER 'Personal:' keyword.
+        
+        Args:
+            page: PDF page object
+        """
+        if not hasattr(self.template, 'personal_block') or not self.template.personal_block:
+            return
+        
+        pers_config = self.template.personal_block
+        if not pers_config.enabled:
+            return
+        
+        trigger = pers_config.trigger
+        height = pers_config.height_below
+        
+        # Find all instances of the trigger
+        instances = page.search_for(trigger)
+        
+        for inst in instances:
+            # Redact rectangle starting from the "P" of "Personal:"
+            personal_rect = fitz.Rect(
+                inst.x0,                # x_start: start of "Personal:"
+                inst.y0,                # y_start: top of trigger text
+                page.rect.width,        # x_end: Right edge
+                inst.y0 + height        # y_end: height pixels below start
+            )
+            
+            page.add_redact_annot(personal_rect, fill=(0, 0, 0))
+            logging.getLogger(__name__).info(f"Redacted personal block at y={inst.y0}, height={height}")
     
     def _redact_pii_entities(self, page: fitz.Page, entities: List[PIIEntity], full_text: str, stats: dict):
         """Redact PII entities found by structured extraction.
