@@ -7,14 +7,15 @@ A sophisticated Python tool for anonymizing German medical documents (PDFs) usin
 ## 🎯 Key Features
 
 - **Zone-Based PDF Anonymization**: Intelligently redacts header, footer, and main content zones
+- **Template System**: Create and manage reusable anonymization templates via the web UI
 - **Structured PII Extraction**: Uses contextual regex patterns (NOT generic NER)
-- **Medical Term Preservation**: Never flags medical terminology as PII
+- **Medical Term Preservation**: Whitelist support per template
 - **Context-Based Location Detection**: Recognizes cities and medical facilities only in specific contexts
 - **German Month Name Support**: Handles dates with German month names ("5. November 2023")
 - **Image Extraction & Anonymization**: OCR-based detection and redaction of PII in embedded images
 - **Consistent Date Shifting**: Maintains temporal relationships while anonymizing dates
+- **Personal-Block Redaction**: Automatically censors the block after a `Personal:` keyword
 - **Docker Support**: Cross-platform deployment on Windows/macOS/Linux
-- **No Whitelist Required**: Medical terms are never checked or filtered
 
 ## 🏗️ Architecture
 
@@ -89,12 +90,55 @@ streamlit run app.py
 
 #### Web UI Features
 
+- ✅ **Template auswählen** – Wählen Sie ein gespeichertes Template in der Sidebar
 - ✅ **Drag & Drop Upload** mehrerer PDFs
 - ✅ **Batch-Verarbeitung** mit Live-Progress
 - ✅ **Einzeldownload** jeder anonymisierten Datei
 - ✅ **ZIP-Download** aller Dateien auf einmal
-- ✅ **Konfigurierbar** (Template, Datum-Shift, Bilder)
 - ✅ **Statistiken** (Anzahl gefundener PII pro Datei)
+
+### 📝 Template Editor
+
+Open the **Template Editor** page in the Streamlit sidebar to create and manage templates:
+
+1. **Neues Template** – Click *🆕 Neu* to start with default values
+2. **Zonen konfigurieren** – Set pixel heights for header, footer, signature, and `Personal:` block
+3. **Whitelist bearbeiten** – Enter medical / anatomical / device terms that must not be redacted
+4. **Speichern** – Enter a name and click *💾 Template speichern*
+
+Templates are saved as JSON files in the `templates/` directory and are immediately available in the main anonymization page.
+
+#### Template JSON Format
+
+```json
+{
+  "name": "Klinik München Standard",
+  "created": "2026-02-25T10:30:00Z",
+  "zones": {
+    "header_page1": 380,
+    "footer_page1": 130,
+    "footer_next": 110,
+    "signature": 150,
+    "personal": 100
+  },
+  "whitelist": {
+    "medical": ["CT", "MRT", "Angiographie"],
+    "anatomical": ["Herz", "Lunge", "Leber"],
+    "devices": ["Stent", "Katheter", "Defibrillator"]
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `zones.header_page1` | Height (px) of the redacted header block on page 1 |
+| `zones.footer_page1` | Height (px) of the redacted footer block on page 1 |
+| `zones.footer_next` | Height (px) of the redacted footer block on pages 2+ |
+| `zones.signature` | Height (px) of the block redacted after *"Mit freundlichen Grüßen"* |
+| `zones.personal` | Height (px) of the block redacted after the keyword *"Personal:"* |
+| `whitelist.medical` | Medical terms excluded from redaction |
+| `whitelist.anatomical` | Anatomical terms excluded from redaction |
+| `whitelist.devices` | Device / manufacturer names excluded from redaction |
 
 ### Command Line Interface (CLI)
 

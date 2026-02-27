@@ -24,6 +24,11 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.main import anonymize_pdf
+from config.template_manager import (
+    list_templates,
+    load_template,
+    ensure_default_template,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -140,7 +145,7 @@ def create_custom_template(
     footer_page1: int,
     footer_other: int,
     signature_block_height: int,
-    shift_days: int = 0,
+    personal_block_height: int = 100,
     whitelist_medical: List[str] = None,
     whitelist_anatomical: List[str] = None,
     whitelist_devices: List[str] = None
@@ -152,7 +157,7 @@ def create_custom_template(
         footer_page1: Footer height in PDF points from bottom (Page 1 only)
         footer_other: Footer height in PDF points from bottom (Pages 2+)
         signature_block_height: Height below signature trigger to redact in PDF points
-        shift_days: Days to shift dates (0 = random)
+        personal_block_height: Height of block redacted after "Personal:" keyword
         whitelist_medical: List of medical terms to exclude from redaction
         whitelist_anatomical: List of anatomical terms to exclude from redaction
         whitelist_devices: List of device/product names to exclude from redaction
@@ -218,8 +223,13 @@ def create_custom_template(
         "redaction": "full"
     }
     
-    # ======= SHIFT-DAYS CONFIG =======
-    template['shift_days'] = shift_days if shift_days != 0 else None
+    # ======= PERSONAL-BLOCK CONFIG =======
+    template['personal_block'] = {
+        "enabled": True,
+        "trigger": "Personal:",
+        "height_below": personal_block_height,
+        "redaction": "full"
+    }
     
     # ======= WHITELIST CONFIG =======
     if whitelist_medical or whitelist_anatomical or whitelist_devices:
@@ -235,6 +245,9 @@ def create_custom_template(
 # ============================================
 # STREAMLIT APP CONFIGURATION
 # ============================================
+
+# Ensure the default template exists before rendering the UI
+ensure_default_template()
 
 # Page configuration
 st.set_page_config(
@@ -266,86 +279,56 @@ if 'results' not in st.session_state:
 st.title("🏥 Redact Clinical German")
 st.markdown("**Anonymisierung deutscher medizinischer Arztbriefe**")
 
+# ── Zone legend ───────────────────────────────────────────────────────────────
+
+st.info(
+    "🔵 **Blau** = Header Seite 1 | "
+    "🟠 **Orange** = Footer Seite 1 | "
+    "🟢 **Grün** = Footer Folgeseiten | "
+    "⬛ **Schwarz** = Signatur-Block & Personal:-Block"
+)
+
 # Sidebar configuration
 with st.sidebar:
     st.header("⚙️ Einstellungen")
-    
-    template_file = st.selectbox(
-        "Template auswählen",
-        ["templates/german_clinical_default.json"],
-        help="Anonymisierungs-Regeln"
+
+    # ── Template selection ────────────────────────────────────────────────────
+    available_templates = list_templates()
+    selected_template = st.selectbox(
+        "📁 Template auswählen",
+        options=available_templates if available_templates else ["default"],
+        help="Wählen Sie ein gespeichertes Template. Templates können im Template-Editor erstellt werden."
     )
-    
-    shift_days = st.slider(
-        "Datums-Shift (Tage)",
-        min_value=-90,
-        max_value=90,
-        value=0,
-        help="Positive Werte = Zukunft, Negative = Vergangenheit, 0 = zufällig"
-    )
-    
+
     extract_images = st.checkbox(
         "Bilder extrahieren",
         value=True,
         help="Bilder separat speichern und anonymisieren"
     )
-    
+
     st.divider()
-    
-    # ===== WHITELIST =====
-    st.header("🛡️ Whitelist")
-    st.markdown("**Begriffe, die NICHT anonymisiert werden**")
-    
-    with st.expander("📋 Whitelist bearbeiten", expanded=False):
-        st.markdown("""
-        Geben Sie Begriffe ein, die **nicht** geschwärzt oder verschoben werden sollen.
-        Ein Begriff pro Zeile.
-        """)
-        
-        whitelist_medical = st.text_area(
-            "Medizinische Begriffe",
-            value="",
-            height=100,
-            help="z.B. Medtronic, Edwards Sapien, Aortenklappe",
-            key="whitelist_medical"
-        )
-        
-        whitelist_anatomical = st.text_area(
-            "Anatomische Begriffe",
-            value="",
-            height=100,
-            help="z.B. Aortenklappe, Herzklappe, Mitralklappe",
-            key="whitelist_anatomical"
-        )
-        
-        whitelist_devices = st.text_area(
-            "Geräte/Produkte",
-            value="",
-            height=100,
-            help="z.B. Medtronic Evolut FX, Edwards Sapien 3",
-            key="whitelist_devices"
-        )
-        
-        # Info über aktive Whitelist
-        total_whitelist = sum([
-            len([t for t in whitelist_medical.split('\n') if t.strip()]),
-            len([t for t in whitelist_anatomical.split('\n') if t.strip()]),
-            len([t for t in whitelist_devices.split('\n') if t.strip()])
-        ])
-        
-        if total_whitelist > 0:
-            st.success(f"✅ {total_whitelist} Begriffe auf der Whitelist")
-        else:
-            st.info("ℹ️ Whitelist ist leer")
-    
+
+    st.markdown("💡 **Tipp:** Templates bearbeiten Sie unter\n**📝 Template Editor**")
+
     st.divider()
-    
+
     # Clear results button
     if st.button("🗑️ Ergebnisse löschen"):
         st.session_state['results'] = []
         st.rerun()
 
-# File upload
+# ── Load the selected user template ───────────────────────────────────────────
+
+user_tpl = load_template(selected_template)
+if user_tpl is None:
+    st.warning(f"⚠️ Template '{selected_template}' konnte nicht geladen werden. Standardwerte werden verwendet.")
+    user_tpl = {
+        "zones": {"header_page1": 380, "footer_page1": 130, "footer_next": 110, "signature": 150, "personal": 100},
+        "whitelist": {"medical": [], "anatomical": [], "devices": []}
+    }
+
+# ── File upload ────────────────────────────────────────────────────────────────
+
 uploaded_files = st.file_uploader(
     "📂 Arztbriefe hochladen (PDF)",
     type=['pdf'],
@@ -355,77 +338,15 @@ uploaded_files = st.file_uploader(
 
 if uploaded_files:
     st.success(f"✅ {len(uploaded_files)} Datei(en) hochgeladen")
-    
-    # ======= ZONEN-KONFIGURATION =======
-    st.header("⚙️ Zonen-Einstellungen")
-    st.markdown("**Passen Sie die Schwärzungs-Bereiche individuell an**")
-    
-    # ======= SEITE 1 (TITELSEITE) =======
-    st.subheader("📄 Seite 1 (Titelseite)")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Header-Bereich**")
-        header_page1 = st.slider(
-            "Header-Höhe (Pixel von oben)",
-            min_value=0,
-            max_value=400,
-            value=280,
-            step=10,
-            key="header_p1",
-            help="Kompletter schwarzer Block oben (inkl. Logos, Adressen, Datum)"
-        )
-        st.info("🔲 Komplett geschwärzt (keine Logo-Erhaltung)")
-    
-    with col2:
-        st.markdown("**Footer-Bereich**")
-        footer_page1 = st.slider(
-            "Footer-Höhe (Pixel von unten)",
-            min_value=0,
-            max_value=150,
-            value=35,
-            step=5,
-            key="footer_p1",
-            help="Nur die unterste Zeile mit IBAN/Bankdaten"
-        )
-        st.info("🔲 Komplett geschwärzt")
-    
-    st.divider()
-    
-    # ======= FOLGESEITEN (2+) =======
-    st.subheader("📄 Folgeseiten (Seite 2, 3, ...)")
-    
-    footer_other = st.slider(
-        "Footer-Höhe (Pixel von unten)",
-        min_value=0,
-        max_value=150,
-        value=80,
-        step=5,
-        key="footer_other",
-        help="Höher als Seite 1, um Name + Geburtsdatum in Fußzeile zu erfassen"
-    )
-    st.info("🔲 Erfasst: 'Alexander Brügge, *01.01.1960, Seite 2'")
-    
-    st.divider()
-    
-    # ======= SIGNATUR-BLOCK =======
-    st.subheader("✍️ Signatur-Block")
-    
-    signature_block_height = st.slider(
-        "Höhe nach 'Mit freundlichen Grüßen' (Pixel)",
-        min_value=0,
-        max_value=100,
-        value=40,
-        step=5,
-        key="signature_block",
-        help="Schwärzt kompletten Block unter der Grußformel (alle Arzt-Namen)"
-    )
-    st.info("✅ Erfasst alle Namen, auch mehrere Ärzte")
-    
+
     # ======= LIVE-VORSCHAU =======
+    zones = user_tpl.get("zones", {})
+    header_page1 = int(zones.get("header_page1", 380))
+    footer_page1 = int(zones.get("footer_page1", 130))
+    footer_other = int(zones.get("footer_next", 110))
+
     st.header("📄 Vorschau mit Schwärzungs-Bereichen")
-    
+
     try:
         preview_image = create_preview_with_zones(
             pdf_file=uploaded_files[0],
@@ -433,114 +354,114 @@ if uploaded_files:
             footer_page1=footer_page1,
             footer_other=footer_other
         )
-        
+
         st.image(preview_image, caption=f"Vorschau: {uploaded_files[0].name}", use_container_width=True)
-        
+
         st.info(f"🔵 **Blauer Bereich** = Header Seite 1 ({header_page1}px von oben) | "
                 f"🟠 **Oranger Bereich** = Footer Seite 1 ({footer_page1}px von unten) | "
                 f"🟢 **Grüner Text** = Footer Folgeseiten ({footer_other}px)")
     except Exception as e:
         st.warning(f"⚠️ Vorschau konnte nicht erstellt werden: {str(e)}")
-    
+
     # ======= ANONYMISIERUNG =======
     st.header("🚀 Anonymisierung")
-    
+
     # Batch processing button and logic (consolidated in same block)
     if st.button("🚀 Anonymisierung starten", type="primary", use_container_width=True):
         # Clear previous results
         st.session_state['results'] = []
-        
-        # Parse whitelist
-        medical_terms = [term.strip() for term in whitelist_medical.split('\n') if term.strip()]
-        anatomical_terms = [term.strip() for term in whitelist_anatomical.split('\n') if term.strip()]
-        device_names = [term.strip() for term in whitelist_devices.split('\n') if term.strip()]
-        
+
+        # Extract settings from user template
+        wl = user_tpl.get("whitelist", {})
+        medical_terms = wl.get("medical", [])
+        anatomical_terms = wl.get("anatomical", [])
+        device_names = wl.get("devices", [])
+
         # Create custom template from user settings
         custom_template = create_custom_template(
             header_page1=header_page1,
             footer_page1=footer_page1,
             footer_other=footer_other,
-            signature_block_height=signature_block_height,
-            shift_days=shift_days,
+            signature_block_height=int(zones.get("signature", 150)),
+            personal_block_height=int(zones.get("personal", 100)),
             whitelist_medical=medical_terms,
             whitelist_anatomical=anatomical_terms,
             whitelist_devices=device_names
         )
-        
+
         # Save custom template to temp file
         temp_template_path = Path(tempfile.gettempdir()) / "custom_template.json"
         with open(temp_template_path, 'w', encoding='utf-8') as f:
             json.dump(custom_template, f, indent=2, ensure_ascii=False)
-        
+
         # Progress tracking
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
+
         results = []
         total = len(uploaded_files)
-        
+
         for idx, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Verarbeite {uploaded_file.name} ({idx+1}/{total})...")
-            
+
             # Sanitize filename to prevent path traversal attacks
             safe_filename = re.sub(r'[^\w\s.-]', '_', uploaded_file.name)
             safe_filename = os.path.basename(safe_filename)  # Remove any path components
-            
+
             # Create unique temporary directory for this file
             temp_dir = tempfile.mkdtemp(prefix='redact_')
             temp_input = Path(temp_dir) / safe_filename
             temp_input.write_bytes(uploaded_file.read())
-            
+
             # Create temp output directory
             temp_output_dir = Path(temp_dir) / "output"
             temp_output_dir.mkdir(parents=True, exist_ok=True)
             temp_output = temp_output_dir / f"anonymized_{safe_filename}"
-            
-            # Call anonymization
+
+            # Call anonymization (date shifting is handled internally / randomly)
             try:
-                # shift_days: 0 means random shift (None triggers random behavior in backend)
                 result = anonymize_pdf(
                     input_path=str(temp_input),
                     template_path=str(temp_template_path),
                     output_path=str(temp_output),
-                    shift_days=shift_days if shift_days != 0 else None,
+                    shift_days=None,  # Always random shift
                     extract_images=extract_images
                 )
-                
+
                 results.append({
                     'original_name': uploaded_file.name,
                     'anonymized_pdf': result['output_pdf'],
                     'images': result.get('images', []),
                     'stats': result.get('stats', {})
                 })
-                
+
                 logger.info(f"Successfully processed {uploaded_file.name}")
-                
+
             except Exception as e:
                 logger.error(f"Error processing {uploaded_file.name}: {e}")
                 st.error(f"❌ Fehler bei {uploaded_file.name}: {str(e)}")
-            
+
             # Update progress
             progress_bar.progress((idx + 1) / total)
-        
+
         status_text.text("✅ Fertig!")
-        
+
         # Store results in session state
         st.session_state['results'] = results
 
 # Download section
 if 'results' in st.session_state and st.session_state['results']:
     st.success(f"✅ {len(st.session_state['results'])} Dateien erfolgreich anonymisiert!")
-    
+
     # Individual downloads
     st.subheader("📥 Einzelne Dateien herunterladen")
-    
+
     cols = st.columns(3)
     for idx, result in enumerate(st.session_state['results']):
         col = cols[idx % 3]
         with col:
             st.markdown(f"**{result['original_name']}**")
-            
+
             # PDF download
             with open(result['anonymized_pdf'], 'rb') as f:
                 st.download_button(
@@ -550,16 +471,16 @@ if 'results' in st.session_state and st.session_state['results']:
                     mime="application/pdf",
                     key=f"pdf_{idx}"
                 )
-            
+
             # Stats
             stats = result['stats']
             st.caption(f"Seiten: {stats.get('total_pages', 0)}")
             st.caption(f"PII gefunden: {stats.get('pii_entities_found', 0)}")
             st.caption(f"Zonen redaktiert: {stats.get('zones_redacted', 0)}")
-    
+
     # Bulk ZIP download
     st.subheader("📦 Alle als ZIP herunterladen")
-    
+
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for result in st.session_state['results']:
@@ -569,7 +490,7 @@ if 'results' in st.session_state and st.session_state['results']:
                     f"anonymized_{result['original_name']}",
                     f.read()
                 )
-            
+
             # Add images if any
             for img_idx, img_path in enumerate(result['images']):
                 with open(img_path, 'rb') as f:
@@ -577,7 +498,7 @@ if 'results' in st.session_state and st.session_state['results']:
                         f"images/{result['original_name']}_image_{img_idx}.png",
                         f.read()
                     )
-    
+
     st.download_button(
         label="📦 Alle Dateien als ZIP herunterladen",
         data=zip_buffer.getvalue(),
@@ -589,18 +510,18 @@ if 'results' in st.session_state and st.session_state['results']:
 if not uploaded_files:
     st.info("""
     ### 📋 Anleitung
-    
-    1. **Hochladen**: Wählen Sie eine oder mehrere PDF-Dateien aus
-    2. **Konfigurieren**: Passen Sie die Einstellungen in der Sidebar an
+
+    1. **Template wählen**: Wählen Sie ein Template in der Sidebar aus
+    2. **Hochladen**: Wählen Sie eine oder mehrere PDF-Dateien aus
     3. **Starten**: Klicken Sie auf "Anonymisierung starten"
     4. **Herunterladen**: Laden Sie einzelne Dateien oder alle als ZIP herunter
-    
+
     ### ✨ Features
-    
+
     - ✅ Mehrere PDFs gleichzeitig hochladen
     - ✅ Batch-Verarbeitung mit Live-Progress
     - ✅ Einzeldownload jeder anonymisierten Datei
     - ✅ ZIP-Download aller Dateien auf einmal
-    - ✅ Konfigurierbare Anonymisierung
+    - ✅ Template-basierte Konfiguration
     - ✅ Statistiken pro Datei
     """)
