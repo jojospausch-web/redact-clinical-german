@@ -86,6 +86,8 @@ class AnonymizationTemplate(BaseModel):
     pii_mechanisms: Optional[Dict[str, str]] = None
     whitelist: Optional[WhitelistConfig] = None
     info: Optional[str] = None
+    header_next: Optional[int] = None  # Header height for pages 2+
+    active_patterns: Optional[Dict[str, bool]] = None  # Pattern activation map
 
 
 class PIIEntity(BaseModel):

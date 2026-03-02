@@ -114,8 +114,8 @@ whitelist = tpl.get("whitelist", {})
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_zones, tab_whitelist, tab_preview = st.tabs(
-    ["⚙️ Zonen-Konfiguration", "📋 Whitelist-Begriffe", "🔍 Vorschau"]
+tab_zones, tab_patterns, tab_whitelist, tab_preview = st.tabs(
+    ["⚙️ Zonen-Konfiguration", "🔍 PII-Pattern Aktivierung", "📋 Whitelist-Begriffe", "🔍 Vorschau"]
 )
 
 # ── Tab 1: Zone heights ───────────────────────────────────────────────────────
@@ -133,6 +133,14 @@ with tab_zones:
             value=int(zones.get("header_page1", 380)),
             step=10,
             help="Komplett geschwärzte Header-Zone auf Seite 1",
+        )
+        header_next = st.number_input(
+            "Header Folgeseiten (px von oben, ab Seite 2)",
+            min_value=0,
+            max_value=600,
+            value=int(zones.get("header_next", 100)),
+            step=10,
+            help="Komplett geschwärzte Header-Zone auf Seite 2 und folgende",
         )
         footer_page1 = st.number_input(
             "Footer Seite 1 (px von unten)",
@@ -169,7 +177,124 @@ with tab_zones:
             help="Höhe des Zensur-Blocks ab dem Keyword 'Personal:'",
         )
 
-# ── Tab 2: Whitelist ──────────────────────────────────────────────────────────
+# ── Tab 2: PII-Pattern Aktivierung ───────────────────────────────────────────
+
+_DEFAULT_PATTERNS = [
+    "patient_block", "case_id", "address",
+    "doctor_name", "doctor_with_location", "doctor_signature", "referring_doctor",
+    "postal_code_with_city", "postal_code_standalone",
+    "city_facility_simple", "university_hospital", "medical_facility_with_city",
+]
+
+with tab_patterns:
+    st.subheader("🔍 PII-Pattern Aktivierung")
+    st.info(
+        "Wähle, welche Muster zur PII-Erkennung verwendet werden sollen. "
+        "Standard: Alle aktiviert."
+    )
+
+    # Initialize active_patterns from template or defaults
+    _stored_patterns = tpl.get("active_patterns", {})
+    active_patterns = {p: _stored_patterns.get(p, True) for p in _DEFAULT_PATTERNS}
+
+    # Bulk actions
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Alle aktivieren", key="pat_all_on"):
+            for key in active_patterns:
+                active_patterns[key] = True
+            tpl["active_patterns"] = active_patterns
+            st.rerun()
+    with col2:
+        if st.button("❌ Alle deaktivieren", key="pat_all_off"):
+            for key in active_patterns:
+                active_patterns[key] = False
+            tpl["active_patterns"] = active_patterns
+            st.rerun()
+
+    with st.expander("📄 Patienten-Informationen", expanded=True):
+        active_patterns["patient_block"] = st.checkbox(
+            "Patient Block",
+            value=active_patterns.get("patient_block", True),
+            help="Erkennt: Herr Müller, Max, *01.01.1960",
+            key="pat_patient_block",
+        )
+        active_patterns["case_id"] = st.checkbox(
+            "Fall-Nummer",
+            value=active_patterns.get("case_id", True),
+            help="Erkennt: Pat.-Nr. 123456789 (6-10 Ziffern)",
+            key="pat_case_id",
+        )
+        active_patterns["address"] = st.checkbox(
+            "Adresse",
+            value=active_patterns.get("address", True),
+            help="Erkennt: Hauptstraße 123, 37075 Göttingen",
+            key="pat_address",
+        )
+
+    with st.expander("👨‍⚕️ Arzt-Informationen", expanded=True):
+        active_patterns["doctor_name"] = st.checkbox(
+            "Arzt-Name",
+            value=active_patterns.get("doctor_name", True),
+            help="Erkennt: Dr. med. Karl Müller, Prof. Schmidt",
+            key="pat_doctor_name",
+        )
+        active_patterns["doctor_with_location"] = st.checkbox(
+            "Arzt mit Standort",
+            value=active_patterns.get("doctor_with_location", True),
+            help="Erkennt: Dr. Führig, MVZ Hannover",
+            key="pat_doctor_location",
+        )
+        active_patterns["doctor_signature"] = st.checkbox(
+            "Unterschrift (nach 'Mit freundlichen Grüßen')",
+            value=active_patterns.get("doctor_signature", True),
+            help="Kontext-basiert: Nur nach Grußformel",
+            key="pat_doctor_sig",
+        )
+        active_patterns["referring_doctor"] = st.checkbox(
+            "Zuweiser (nach 'Zuweiser:')",
+            value=active_patterns.get("referring_doctor", True),
+            help="Kontext-basiert: Dr. nach 'Zuweiser'",
+            key="pat_referring",
+        )
+
+    with st.expander("📍 Orts-Erkennung", expanded=True):
+        st.warning(
+            "⚠️ Bei Dokumenten mit vielen Zahlen (Radiologie, Labor) "
+            "'PLZ alleinstehend' deaktivieren!"
+        )
+        active_patterns["postal_code_with_city"] = st.checkbox(
+            "PLZ + Stadt",
+            value=active_patterns.get("postal_code_with_city", True),
+            help="Erkennt: 12345 Berlin, 37075 Göttingen",
+            key="pat_plz_city",
+        )
+        active_patterns["postal_code_standalone"] = st.checkbox(
+            "PLZ alleinstehend",
+            value=active_patterns.get("postal_code_standalone", True),
+            help="⚠️ Erkennt: 12345 (ACHTUNG: Kann Zahlen wie 10000 IU erfassen!)",
+            key="pat_plz_alone",
+        )
+        active_patterns["city_facility_simple"] = st.checkbox(
+            "Stadt-Adjektiv + Klinik",
+            value=active_patterns.get("city_facility_simple", True),
+            help="Erkennt: Hamburger Krankenhaus, Berliner Klinik",
+            key="pat_city_facility",
+        )
+        active_patterns["university_hospital"] = st.checkbox(
+            "Universitätsklinikum + Stadt",
+            value=active_patterns.get("university_hospital", True),
+            help="Erkennt: Universitätsklinikum Göttingen, UKE Hamburg",
+            key="pat_uni_hospital",
+        )
+        active_patterns["medical_facility_with_city"] = st.checkbox(
+            "Generische Einrichtung mit Stadt",
+            value=active_patterns.get("medical_facility_with_city", True),
+            help="Erkennt: Hamburger Herzzentrum, Göttinger MVZ",
+            key="pat_facility_generic",
+        )
+
+# ── Tab 3: Whitelist ──────────────────────────────────────────────────────────
 
 with tab_whitelist:
     st.subheader("📋 Whitelist-Begriffe")
@@ -197,7 +322,7 @@ with tab_whitelist:
         help="z.B. Stent, Katheter, Defibrillator",
     )
 
-# ── Tab 3: Preview ────────────────────────────────────────────────────────────
+# ── Tab 4: Preview ────────────────────────────────────────────────────────────
 
 with tab_preview:
     st.subheader("🔍 Aktuelle Einstellungen (Live-Vorschau)")
@@ -206,11 +331,13 @@ with tab_preview:
         "name": tpl_name or tpl.get("name", "Unbenannt"),
         "zones": {
             "header_page1": header_page1,
+            "header_next": header_next,
             "footer_page1": footer_page1,
             "footer_next": footer_next,
             "signature": signature,
             "personal": personal,
         },
+        "active_patterns": active_patterns,
         "whitelist": {
             "medical": _parse_list(wl_medical),
             "anatomical": _parse_list(wl_anatomical),
@@ -237,11 +364,13 @@ if st.button("💾 Template speichern", type="primary", use_container_width=True
             ),
             "zones": {
                 "header_page1": header_page1,
+                "header_next": header_next,
                 "footer_page1": footer_page1,
                 "footer_next": footer_next,
                 "signature": signature,
                 "personal": personal,
             },
+            "active_patterns": active_patterns,
             "whitelist": {
                 "medical": _parse_list(wl_medical),
                 "anatomical": _parse_list(wl_anatomical),

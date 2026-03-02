@@ -15,10 +15,25 @@ DEFAULT_TEMPLATE: dict = {
     "created": "2026-02-25T05:07:00Z",
     "zones": {
         "header_page1": 380,
+        "header_next": 100,
         "footer_page1": 130,
         "footer_next": 110,
         "signature": 150,
         "personal": 100
+    },
+    "active_patterns": {
+        "patient_block": True,
+        "case_id": True,
+        "address": True,
+        "doctor_name": True,
+        "doctor_with_location": True,
+        "doctor_signature": True,
+        "referring_doctor": True,
+        "postal_code_with_city": True,
+        "postal_code_standalone": True,
+        "city_facility_simple": True,
+        "university_hospital": True,
+        "medical_facility_with_city": True
     },
     "whitelist": {
         "medical": [],
@@ -145,7 +160,7 @@ def _fill_defaults(data: dict) -> dict:
     result = get_default_template()
     result.update(data)
     # Merge nested dicts
-    for section in ("zones", "whitelist"):
+    for section in ("zones", "whitelist", "active_patterns"):
         if section in data and isinstance(data[section], dict):
             result[section] = dict(result.get(section, {}))
             result[section].update(data[section])
