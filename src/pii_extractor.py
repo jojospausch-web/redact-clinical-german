@@ -85,11 +85,13 @@ class StructuredPIIExtractor:
         # Use pre-computed lowercase set for O(1) lookup
         return entity_text.lower() in self._whitelist_terms_lower
     
-    def extract_pii(self, text: str) -> List[PIIEntity]:
+    def extract_pii(self, text: str, active_patterns: Optional[Dict[str, bool]] = None) -> List[PIIEntity]:
         """Extract PII entities from text using structured patterns.
         
         Args:
             text: Text to analyze
+            active_patterns: Optional dict of pattern_name -> enabled (True/False).
+                             If None or pattern missing, default to enabled.
         
         Returns:
             List of detected PII entities
@@ -97,6 +99,13 @@ class StructuredPIIExtractor:
         entities = []
         
         for pattern_name, pattern_config in self.patterns.items():
+            # Check if pattern is enabled
+            if active_patterns is not None:
+                is_enabled = active_patterns.get(pattern_name, True)  # Default: True
+                if not is_enabled:
+                    logger.debug(f"Skipping disabled pattern: {pattern_name}")
+                    continue
+
             if pattern_config.context_trigger:
                 # Context-based extraction
                 entities.extend(

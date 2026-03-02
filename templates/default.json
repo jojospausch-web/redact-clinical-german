@@ -3,10 +3,25 @@
   "created": "2026-02-25T05:07:00Z",
   "zones": {
     "header_page1": 380,
+    "header_next": 100,
     "footer_page1": 130,
     "footer_next": 110,
     "signature": 150,
     "personal": 100
+  },
+  "active_patterns": {
+    "patient_block": true,
+    "case_id": true,
+    "address": true,
+    "doctor_name": true,
+    "doctor_with_location": true,
+    "doctor_signature": true,
+    "referring_doctor": true,
+    "postal_code_with_city": true,
+    "postal_code_standalone": true,
+    "city_facility_simple": true,
+    "university_hospital": true,
+    "medical_facility_with_city": true
   },
   "whitelist": {
     "medical": ["CT", "MRT", "Angiographie"],

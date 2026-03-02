@@ -146,6 +146,8 @@ def create_custom_template(
     footer_other: int,
     signature_block_height: int,
     personal_block_height: int = 100,
+    header_next: int = 0,
+    active_patterns: dict = None,
     whitelist_medical: List[str] = None,
     whitelist_anatomical: List[str] = None,
     whitelist_devices: List[str] = None
@@ -238,7 +240,15 @@ def create_custom_template(
             "anatomical_terms": whitelist_anatomical or [],
             "device_names": whitelist_devices or []
         }
-    
+
+    # ======= HEADER FOLGESEITEN CONFIG =======
+    if header_next and header_next > 0:
+        template['header_next'] = header_next
+
+    # ======= ACTIVE PATTERNS CONFIG =======
+    if active_patterns is not None:
+        template['active_patterns'] = active_patterns
+
     return template
 
 
@@ -376,6 +386,7 @@ if uploaded_files:
         medical_terms = wl.get("medical", [])
         anatomical_terms = wl.get("anatomical", [])
         device_names = wl.get("devices", [])
+        active_patterns = user_tpl.get("active_patterns", None)
 
         # Create custom template from user settings
         custom_template = create_custom_template(
@@ -384,6 +395,8 @@ if uploaded_files:
             footer_other=footer_other,
             signature_block_height=int(zones.get("signature", 150)),
             personal_block_height=int(zones.get("personal", 100)),
+            header_next=int(zones.get("header_next", 100)),
+            active_patterns=active_patterns,
             whitelist_medical=medical_terms,
             whitelist_anatomical=anatomical_terms,
             whitelist_devices=device_names

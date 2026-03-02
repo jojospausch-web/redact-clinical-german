@@ -70,9 +70,13 @@ class ZoneBasedAnonymizer:
             # 2b. Apply personal block redaction
             self._redact_personal_blocks(page)
             
+            # 2c. Apply header redaction on pages 2+
+            self._redact_header_next_pages(page, page_num + 1)
+            
             # 3. Extract and analyze text for structured PII
             text = page.get_text()
-            pii_entities = self.pii_extractor.extract_pii(text)
+            active_patterns = getattr(self.template, 'active_patterns', None)
+            pii_entities = self.pii_extractor.extract_pii(text, active_patterns)
             stats['pii_entities_found'] += len(pii_entities)
             
             # 4. Redact PII entities
@@ -274,6 +278,34 @@ class ZoneBasedAnonymizer:
             page.add_redact_annot(personal_rect, fill=(0, 0, 0))
             logging.getLogger(__name__).info(f"Redacted personal block at y={inst.y0}, height={height}")
     
+    def _redact_header_next_pages(self, page: fitz.Page, page_num: int):
+        """Redact header zone on pages 2+.
+
+        Args:
+            page: PDF page object
+            page_num: Current page number (1-indexed)
+        """
+        if page_num == 1:
+            return  # Skip page 1
+
+        if not hasattr(self.template, 'header_next') or not self.template.header_next:
+            return  # Not configured
+
+        header_height = self.template.header_next
+
+        # Header is at the TOP of the page (y=0 at top in PyMuPDF)
+        header_rect = fitz.Rect(
+            0,               # x_start: Left edge
+            0,               # y_start: Top of page
+            page.rect.width, # x_end: Right edge
+            header_height    # y_end: header_height pixels from top
+        )
+
+        page.add_redact_annot(header_rect, fill=(0, 0, 0))
+        logging.getLogger(__name__).info(
+            f"Redacted header on page {page_num}, height={header_height}"
+        )
+
     def _redact_pii_entities(self, page: fitz.Page, entities: List[PIIEntity], full_text: str, stats: dict):
         """Redact PII entities found by structured extraction.
         
