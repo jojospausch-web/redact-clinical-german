@@ -184,6 +184,7 @@ _DEFAULT_PATTERNS = [
     "doctor_name", "doctor_with_location", "doctor_signature", "referring_doctor",
     "postal_code_with_city", "postal_code_standalone",
     "city_facility_simple", "university_hospital", "medical_facility_with_city",
+    "phone_landline", "phone_mobile", "phone_context", "email", "fax",
 ]
 
 with tab_patterns:
@@ -292,6 +293,42 @@ with tab_patterns:
             value=active_patterns.get("medical_facility_with_city", True),
             help="Erkennt: Hamburger Herzzentrum, Göttinger MVZ",
             key="pat_facility_generic",
+        )
+
+    with st.expander("📞 Kontakt-Informationen", expanded=True):
+        st.warning(
+            "⚠️ Telefon-Patterns können auch medizinische Messwerte erfassen "
+            "(z.B. '120/80'). Bei Labor-/Kardiologie-Dokumenten deaktivieren!"
+        )
+        active_patterns["phone_landline"] = st.checkbox(
+            "Telefon Festnetz",
+            value=active_patterns.get("phone_landline", True),
+            help="Erkennt: 0561/937690, Tel.: 030-12345678, +49 561 937690",
+            key="pat_phone_landline",
+        )
+        active_patterns["phone_mobile"] = st.checkbox(
+            "Telefon Mobil",
+            value=active_patterns.get("phone_mobile", True),
+            help="Erkennt: 0173/1234567, Mobil: 0151-98765432",
+            key="pat_phone_mobile",
+        )
+        active_patterns["phone_context"] = st.checkbox(
+            "Telefon (kontext-basiert)",
+            value=active_patterns.get("phone_context", True),
+            help="Erkennt: 'unter 937690 erreichbar', 'telefonisch unter 12345'",
+            key="pat_phone_context",
+        )
+        active_patterns["email"] = st.checkbox(
+            "E-Mail-Adressen",
+            value=active_patterns.get("email", True),
+            help="Erkennt: max.mustermann@klinikum.de",
+            key="pat_email",
+        )
+        active_patterns["fax"] = st.checkbox(
+            "Fax-Nummern",
+            value=active_patterns.get("fax", True),
+            help="Erkennt: Fax: 0561/937691, Telefax: 030-12345679",
+            key="pat_fax",
         )
 
 # ── Tab 3: Whitelist ──────────────────────────────────────────────────────────

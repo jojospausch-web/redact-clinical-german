@@ -21,7 +21,12 @@
     "postal_code_standalone": true,
     "city_facility_simple": true,
     "university_hospital": true,
-    "medical_facility_with_city": true
+    "medical_facility_with_city": true,
+    "phone_landline": true,
+    "phone_mobile": true,
+    "phone_context": true,
+    "email": true,
+    "fax": true
   },
   "whitelist": {
     "medical": ["CT", "MRT", "Angiographie"],
