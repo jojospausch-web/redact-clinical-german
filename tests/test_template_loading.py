@@ -37,9 +37,7 @@ class TestTemplateLoading:
         
         # Check date handling patterns
         assert "birthdate" in config.date_handling
-        assert "german_full_date" in config.date_handling
-        assert "german_abbr_date" in config.date_handling
-        assert "numeric_date" in config.date_handling
+        # Date shifting has been removed; only birthdate remains for redaction
         
         # Verify date patterns have required fields
         for pattern_name, pattern_config in config.date_handling.items():
@@ -58,16 +56,10 @@ class TestTemplateLoading:
         template_path = "templates/german_clinical_default.json"
         config = load_and_validate_template(template_path)
         
-        # Test birthdate pattern
+        # Test birthdate pattern (action is now "remove" since date-shifting is removed)
         birthdate_config = config.date_handling["birthdate"]
         assert birthdate_config.pattern == r"\*(\d{2}\.\d{2}\.\d{4})"
-        assert birthdate_config.action == "shift"
-        assert birthdate_config.shift_days_range == (-30, 30)
-        
-        # Test german full date pattern
-        german_full_config = config.date_handling["german_full_date"]
-        assert "Januar" in german_full_config.pattern
-        assert german_full_config.action == "shift"
+        assert birthdate_config.action == "remove"
         
     def test_template_optional_fields(self):
         """Test that optional fields are present and valid."""

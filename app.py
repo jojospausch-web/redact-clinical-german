@@ -150,7 +150,8 @@ def create_custom_template(
     active_patterns: dict = None,
     whitelist_medical: List[str] = None,
     whitelist_anatomical: List[str] = None,
-    whitelist_devices: List[str] = None
+    whitelist_devices: List[str] = None,
+    header_until_keyword: dict = None
 ) -> dict:
     """Erstellt Template-Dict aus User-Einstellungen mit separaten Zonen für Seite 1 vs. Folgeseiten.
     
@@ -249,6 +250,10 @@ def create_custom_template(
     if active_patterns is not None:
         template['active_patterns'] = active_patterns
 
+    # ======= HEADER-UNTIL-KEYWORD CONFIG =======
+    if header_until_keyword is not None:
+        template['header_until_keyword'] = header_until_keyword
+
     return template
 
 
@@ -333,7 +338,7 @@ user_tpl = load_template(selected_template)
 if user_tpl is None:
     st.warning(f"⚠️ Template '{selected_template}' konnte nicht geladen werden. Standardwerte werden verwendet.")
     user_tpl = {
-        "zones": {"header_page1": 380, "footer_page1": 130, "footer_next": 110, "signature": 150, "personal": 100},
+        "zones": {"header_page1": 380, "footer_page1": 130, "footer_next": 200, "signature": 150, "personal": 100},
         "whitelist": {"medical": [], "anatomical": [], "devices": []}
     }
 
@@ -399,7 +404,8 @@ if uploaded_files:
             active_patterns=active_patterns,
             whitelist_medical=medical_terms,
             whitelist_anatomical=anatomical_terms,
-            whitelist_devices=device_names
+            whitelist_devices=device_names,
+            header_until_keyword=user_tpl.get("header_until_keyword")
         )
 
         # Save custom template to temp file

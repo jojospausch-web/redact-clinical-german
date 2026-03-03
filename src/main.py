@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import AnonymizationTemplate
 from src.zone_anonymizer import ZoneBasedAnonymizer
-from src.date_shifter import DateShifter
 from src.image_anonymizer import MedicalImageAnonymizer
 from src.image_extractor import ImageExtractor
 
@@ -86,7 +85,7 @@ def anonymize_pdf(
         input_path: Path to input PDF file
         template_path: Path to anonymization template JSON
         output_path: Path for output PDF (auto-generated if None)
-        shift_days: Days to shift dates (None for random)
+        shift_days: Deprecated – date shifting has been removed; parameter kept for API compatibility
         extract_images: Whether to extract and anonymize images
     
     Returns:
@@ -111,16 +110,8 @@ def anonymize_pdf(
     config = load_and_validate_template(template_path)
     logger.info(f"Loaded template: {config.template_name} v{config.version}")
     
-    # Initialize date shifter
-    shift_range = (-30, 30)
-    if 'birthdate' in config.date_handling:
-        shift_range = config.date_handling['birthdate'].shift_days_range or shift_range
-    
-    date_shifter = DateShifter(shift_days=shift_days, shift_range=shift_range)
-    logger.info(f"Date shifter initialized with offset: {date_shifter.get_shift_days()} days")
-    
     # Initialize anonymizer
-    anonymizer = ZoneBasedAnonymizer(config, date_shifter)
+    anonymizer = ZoneBasedAnonymizer(config)
     
     # Determine image extraction path
     extract_images_path = None
@@ -163,7 +154,6 @@ def anonymize_pdf(
     logger.info(f"Total pages processed: {stats['total_pages']}")
     logger.info(f"Zones redacted: {stats['zones_redacted']}")
     logger.info(f"PII entities found: {stats['pii_entities_found']}")
-    logger.info(f"Dates shifted: {stats['dates_shifted']}")
     if extract_images:
         logger.info(f"Images extracted: {stats['images_extracted']}")
     logger.info("=" * 60)

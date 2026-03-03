@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 from src.config import AnonymizationTemplate
 from src.zone_anonymizer import ZoneBasedAnonymizer
-from src.date_shifter import DateShifter
 
 
 def demonstrate_anonymization():
@@ -49,10 +48,7 @@ def demonstrate_anonymization():
     
     # Initialize components
     print("4. Initializing anonymization components:")
-    date_shifter = DateShifter(shift_days=10)
-    print(f"   ✓ Date shifter ready (offset: {date_shifter.get_shift_days()} days)")
-    
-    anonymizer = ZoneBasedAnonymizer(config, date_shifter)
+    anonymizer = ZoneBasedAnonymizer(config)
     print(f"   ✓ Zone anonymizer ready")
     print()
     
@@ -73,7 +69,6 @@ def demonstrate_anonymization():
         print(f"   - Pages processed: {stats['total_pages']}")
         print(f"   - Zones redacted: {stats['zones_redacted']}")
         print(f"   - PII entities found: {stats['pii_entities_found']}")
-        print(f"   - Dates shifted: {stats['dates_shifted']}")
         print(f"   - Output saved to: {output_path}")
         print()
     else:
