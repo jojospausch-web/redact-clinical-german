@@ -8,7 +8,6 @@ import logging
 from src.config import ZoneConfig, AnonymizationTemplate, PIIEntity
 from src.pii_extractor import StructuredPIIExtractor
 from src.image_extractor import ImageExtractor
-from src.date_shifter import DateShifter
 
 
 class ZoneBasedAnonymizer:
@@ -16,21 +15,18 @@ class ZoneBasedAnonymizer:
     
     def __init__(
         self,
-        template: AnonymizationTemplate,
-        date_shifter: Optional[DateShifter] = None
+        template: AnonymizationTemplate
     ):
         """Initialize the anonymizer.
         
         Args:
             template: Anonymization template with rules
-            date_shifter: Optional date shifter for date anonymization
         """
         self.template = template
         # Pass whitelist to the PII extractor
         whitelist = template.whitelist if hasattr(template, 'whitelist') else None
         self.pii_extractor = StructuredPIIExtractor(template.structured_patterns, whitelist)
         self.image_extractor = ImageExtractor()
-        self.date_shifter = date_shifter or DateShifter()
     
     def anonymize_pdf(
         self,
@@ -53,15 +49,14 @@ class ZoneBasedAnonymizer:
             'total_pages': len(doc),
             'zones_redacted': 0,
             'pii_entities_found': 0,
-            'images_extracted': 0,
-            'dates_shifted': 0
+            'images_extracted': 0
         }
         
         # Process each page
         for page_num in range(len(doc)):
             page = doc[page_num]
             
-            # 1. Apply zone-based redaction
+            # 1. Apply zone-based redaction (union system: all zones applied independently)
             self._redact_zones(page, page_num, stats)
             
             # 2. Apply signature block redaction
@@ -73,6 +68,9 @@ class ZoneBasedAnonymizer:
             # 2c. Apply header redaction on pages 2+
             self._redact_header_next_pages(page, page_num + 1)
             
+            # 2d. Apply header-until-keyword redaction
+            self._redact_header_until_keyword(page)
+            
             # 3. Extract and analyze text for structured PII
             text = page.get_text()
             active_patterns = getattr(self.template, 'active_patterns', None)
@@ -81,16 +79,14 @@ class ZoneBasedAnonymizer:
             
             # 4. Redact PII entities
             self._redact_pii_entities(page, pii_entities, text, stats)
+            
+            # Apply redactions per page
+            page.apply_redactions()
         
-        # 4. Extract images if requested
+        # Extract images if requested
         if extract_images_path:
             images = self.image_extractor.extract_images(pdf_path, extract_images_path)
             stats['images_extracted'] = len(images)
-        
-        # Apply all redactions
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            page.apply_redactions()
         
         # Save anonymized PDF
         doc.save(output_path)
@@ -306,6 +302,37 @@ class ZoneBasedAnonymizer:
             f"Redacted header on page {page_num}, height={header_height}"
         )
 
+    def _redact_header_until_keyword(self, page: fitz.Page):
+        """Redact everything ABOVE the first found trigger keyword.
+
+        Useful for variable-height headers (e.g. 'Sehr geehrte Kollegin',
+        'Herzkatheterbriefe').
+
+        Args:
+            page: PDF page object
+        """
+        config = getattr(self.template, 'header_until_keyword', None)
+        if not config or not config.get('enabled'):
+            return
+
+        triggers = config.get('triggers', [])
+        for trigger in triggers:
+            instances = page.search_for(trigger)
+            if instances:
+                trigger_y = instances[0].y0
+                # Redact everything ABOVE the trigger line
+                rect = fitz.Rect(
+                    0,
+                    0,
+                    page.rect.width,
+                    trigger_y
+                )
+                page.add_redact_annot(rect, fill=(0, 0, 0))
+                logging.getLogger(__name__).info(
+                    f"Redacted header until keyword '{trigger}' at y={trigger_y}"
+                )
+                break  # Only use first matching trigger
+
     def _redact_pii_entities(self, page: fitz.Page, entities: List[PIIEntity], full_text: str, stats: dict):
         """Redact PII entities found by structured extraction.
         
@@ -320,13 +347,12 @@ class ZoneBasedAnonymizer:
             areas = page.search_for(entity.text)
             
             for area in areas:
-                # Handle date shifting
-                if entity.entity_type == "BIRTHDATE" or "DATE" in entity.entity_type:
-                    # Shift the date
-                    shifted_date = self.date_shifter.shift_date(entity.text)
-                    # Redact and add shifted text
-                    page.add_redact_annot(area, text=shifted_date, fill=(1, 1, 1), text_color=(0, 0, 0))
-                    stats['dates_shifted'] += 1
-                else:
-                    # Standard black redaction
-                    page.add_redact_annot(area, fill=(0, 0, 0))
+                # Add padding to ensure complete coverage (especially important for right side)
+                extended_rect = fitz.Rect(
+                    area.x0 - 2,   # 2px left
+                    area.y0 - 2,   # 2px top
+                    area.x1 + 10,  # 10px right
+                    area.y1 + 2    # 2px bottom
+                )
+                # Standard black redaction for all entities
+                page.add_redact_annot(extended_rect, fill=(0, 0, 0))

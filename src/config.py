@@ -75,7 +75,7 @@ class AnonymizationTemplate(BaseModel):
     version: str
     zones: Dict[str, ZoneConfig]
     structured_patterns: Dict[str, PatternGroup]
-    date_handling: Dict[str, DateHandlingConfig]
+    date_handling: Optional[Dict[str, DateHandlingConfig]] = None
     image_pii_patterns: Dict[str, str]
     
     # Optional fields for additional configurations
@@ -88,6 +88,7 @@ class AnonymizationTemplate(BaseModel):
     info: Optional[str] = None
     header_next: Optional[int] = None  # Header height for pages 2+
     active_patterns: Optional[Dict[str, bool]] = None  # Pattern activation map
+    header_until_keyword: Optional[Dict[str, Any]] = None  # Header-until-keyword zone config
 
 
 class PIIEntity(BaseModel):

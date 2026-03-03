@@ -7,7 +7,6 @@ import tempfile
 
 from src.zone_anonymizer import ZoneBasedAnonymizer
 from src.config import AnonymizationTemplate, ZoneConfig, PatternGroup, DateHandlingConfig
-from src.date_shifter import DateShifter
 
 
 class TestZoneBasedAnonymizer:
@@ -80,11 +79,9 @@ class TestZoneBasedAnonymizer:
     
     def test_anonymizer_initialization(self, sample_template):
         """Test that anonymizer initializes correctly."""
-        date_shifter = DateShifter(shift_days=10)
-        anonymizer = ZoneBasedAnonymizer(sample_template, date_shifter)
+        anonymizer = ZoneBasedAnonymizer(sample_template)
         
         assert anonymizer.template == sample_template
-        assert anonymizer.date_shifter == date_shifter
         assert anonymizer.pii_extractor is not None
         assert anonymizer.image_extractor is not None
     
@@ -94,8 +91,7 @@ class TestZoneBasedAnonymizer:
             output_path = f.name
         
         try:
-            date_shifter = DateShifter(shift_days=10)
-            anonymizer = ZoneBasedAnonymizer(sample_template, date_shifter)
+            anonymizer = ZoneBasedAnonymizer(sample_template)
             
             stats = anonymizer.anonymize_pdf(sample_pdf, output_path)
             

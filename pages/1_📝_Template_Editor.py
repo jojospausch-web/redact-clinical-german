@@ -154,7 +154,7 @@ with tab_zones:
             "Footer Folgeseiten (px von unten)",
             min_value=0,
             max_value=300,
-            value=int(zones.get("footer_next", 110)),
+            value=int(zones.get("footer_next", 200)),
             step=10,
             help="Footer-Zone auf Seite 2 und folgende",
         )
@@ -177,6 +177,31 @@ with tab_zones:
             help="Höhe des Zensur-Blocks ab dem Keyword 'Personal:'",
         )
 
+    st.subheader("⚙️ Spezielle Zonen")
+    _huk_config = tpl.get("header_until_keyword", {})
+    header_until_keyword_enabled = st.checkbox(
+        "Header bis Keyword",
+        value=_huk_config.get("enabled", False),
+        help="Schwärzt alles ÜBER einer bestimmten Phrase (z.B. 'Sehr geehrte Kollegin')",
+        key="huk_enabled",
+    )
+    header_until_keyword_triggers_raw = st.text_area(
+        "Trigger-Keywords (einer pro Zeile)",
+        value="\n".join(_huk_config.get("triggers", [
+            "Sehr geehrte Kollegin",
+            "Sehr geehrter Kollege",
+            "Sehr geehrter Herr Kollege",
+            "Herzkatheterbriefe",
+            "Arztbrief",
+        ])),
+        help="Erstes gefundenes Keyword wird verwendet",
+        key="huk_triggers",
+        disabled=not header_until_keyword_enabled,
+    )
+    header_until_keyword_triggers = [
+        t.strip() for t in header_until_keyword_triggers_raw.splitlines() if t.strip()
+    ]
+
 # ── Tab 2: PII-Pattern Aktivierung ───────────────────────────────────────────
 
 _DEFAULT_PATTERNS = [
@@ -184,7 +209,7 @@ _DEFAULT_PATTERNS = [
     "doctor_name", "doctor_with_location", "doctor_signature", "referring_doctor",
     "postal_code_with_city", "postal_code_standalone",
     "city_facility_simple", "university_hospital", "medical_facility_with_city",
-    "phone_landline", "phone_mobile", "phone_context", "email", "fax",
+    "phone_landline", "phone_mobile", "phone_context", "email", "fax", "hk_number",
 ]
 
 with tab_patterns:
@@ -330,6 +355,12 @@ with tab_patterns:
             help="Erkennt: Fax: 0561/937691, Telefax: 030-12345679",
             key="pat_fax",
         )
+        active_patterns["hk_number"] = st.checkbox(
+            "HK-Nummer (Format: 1234/56)",
+            value=active_patterns.get("hk_number", True),
+            help="Erkennt: HK-Nr.: 1234/56",
+            key="pat_hk_number",
+        )
 
 # ── Tab 3: Whitelist ──────────────────────────────────────────────────────────
 
@@ -374,6 +405,10 @@ with tab_preview:
             "signature": signature,
             "personal": personal,
         },
+        "header_until_keyword": {
+            "enabled": header_until_keyword_enabled,
+            "triggers": header_until_keyword_triggers,
+        },
         "active_patterns": active_patterns,
         "whitelist": {
             "medical": _parse_list(wl_medical),
@@ -406,6 +441,10 @@ if st.button("💾 Template speichern", type="primary", use_container_width=True
                 "footer_next": footer_next,
                 "signature": signature,
                 "personal": personal,
+            },
+            "header_until_keyword": {
+                "enabled": header_until_keyword_enabled,
+                "triggers": header_until_keyword_triggers,
             },
             "active_patterns": active_patterns,
             "whitelist": {

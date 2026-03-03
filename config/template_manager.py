@@ -17,9 +17,19 @@ DEFAULT_TEMPLATE: dict = {
         "header_page1": 380,
         "header_next": 100,
         "footer_page1": 130,
-        "footer_next": 110,
+        "footer_next": 200,
         "signature": 150,
         "personal": 100
+    },
+    "header_until_keyword": {
+        "enabled": False,
+        "triggers": [
+            "Sehr geehrte Kollegin",
+            "Sehr geehrter Kollege",
+            "Sehr geehrter Herr Kollege",
+            "Herzkatheterbriefe",
+            "Arztbrief"
+        ]
     },
     "active_patterns": {
         "patient_block": True,
@@ -33,7 +43,13 @@ DEFAULT_TEMPLATE: dict = {
         "postal_code_standalone": True,
         "city_facility_simple": True,
         "university_hospital": True,
-        "medical_facility_with_city": True
+        "medical_facility_with_city": True,
+        "phone_landline": True,
+        "phone_mobile": True,
+        "phone_context": True,
+        "email": True,
+        "fax": True,
+        "hk_number": True
     },
     "whitelist": {
         "medical": [],

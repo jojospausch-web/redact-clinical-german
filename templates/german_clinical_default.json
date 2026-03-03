@@ -49,9 +49,9 @@
       "type": "ADDRESS"
     },
     "doctor_name": {
-      "pattern": "((?:Prof\\.|Dr\\.|PD)\\s+(?:med\\.\\s+)?[A-ZÄÖÜ][a-zäöüß-]+(?:\\s+[A-ZÄÖÜ][a-zäöüß-]+)*)",
+      "pattern": "((?:Prof\\.|Dr\\.|PD)\\s+(?:med\\.\\s+)?(?:[A-ZÄÖÜ][a-zäöüß-]+\\s*)+)",
       "type": "DOCTOR_NAME",
-      "comment": "Captures complete doctor name as single group"
+      "comment": "Greedy: captures all names after title, including single lastname after 'PD Dr.'"
     },
     "doctor_with_location": {
       "pattern": "Dr\\.\\s+([A-ZÄÖÜ][a-zäöüß-]+)(?:,\\s+([A-Z]{2,})\\s+([A-ZÄÖÜ][a-zäöüß]+))?",
@@ -120,9 +120,9 @@
       "comment": "Mobil: 0173/1234567, +49 173 12345678"
     },
     "phone_context": {
-      "pattern": "(?:unter|über|Nummer)\\s+(?:der\\s+)?(?:Nummer\\s+)?(\\d{3,5}(?:[\\s\\-\\/]\\d{3,9})?(?:[\\s\\-]\\d{2,4})?)\\s+(?:erreichbar|telefonisch|zu erreichen|kontaktieren)",
+      "pattern": "(?:unter\\s+(?:der\\s+)?Nummer|erreichbar\\s+unter|Rufnummer):?\\s*(0\\d{3,4}[\\s\\-\\/]\\d{5,8})",
       "type": "PHONE",
-      "comment": "Kontext: 'unter 937690 erreichbar'"
+      "comment": "Context-based phone numbers: 'unter der Nummer 0561/937690'"
     },
     "email": {
       "pattern": "\\b([a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,253}\\.[a-zA-Z]{2,})",
@@ -133,6 +133,11 @@
       "pattern": "(?:Fax:|Telefax:|Fax-Nr\\.?:?)\\s*(?:\\+49\\s?)?(?:\\(0\\))?\\s*(\\d{2,5})[\\s\\-\\/](\\d{3,9})",
       "type": "FAX",
       "comment": "Fax: 0561/937691"
+    },
+    "hk_number": {
+      "pattern": "HK-?Nr\\.?:?\\s*([0-9]{4}\\/[0-9]{2})",
+      "type": "HK_NUMBER",
+      "comment": "Format: HK-Nr.: 1234/56"
     }
   },
   
@@ -146,7 +151,8 @@
       "facility_keywords": [
         "Universitätsklinikum", "Uniklinik", "Klinikum", "Krankenhaus",
         "Herzzentrum", "Tumorzentrum", "Lungenzentrum", "MVZ", "Charité",
-        "Medizinisches Versorgungszentrum"
+        "Medizinisches Versorgungszentrum",
+        "Ambulanzzentrum", "Rehabilitationszentrum", "Reha-Zentrum", "Rehaklinik"
       ],
       "referral_keywords": ["überwiesen", "Zuweiser", "eingewiesen", "verlegt"]
     },
@@ -165,29 +171,7 @@
   "date_handling": {
     "birthdate": {
       "pattern": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
-      "action": "shift",
-      "shift_days_range": [-30, 30]
-    },
-    "german_full_date": {
-      "pattern": "\\b(\\d{1,2})\\. (Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember) (\\d{4})\\b",
-      "action": "shift"
-    },
-    "german_abbr_date": {
-      "pattern": "\\b(\\d{1,2})\\. (Jan|Feb|Mär|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez)\\.? (\\d{4})\\b",
-      "action": "shift"
-    },
-    "numeric_date": {
-      "pattern": "\\b(\\d{2})\\.(\\d{2})\\.(\\d{4})\\b",
-      "action": "shift"
-    },
-    "date_with_context": {
-      "pattern": "(?:vom|bis|am|seit|zum)\\s+(\\d{1,2})\\.(\\d{1,2})(?:\\.(\\d{4}))?",
-      "comment": "Captures '05.08 bis zum 21.08.2023'",
-      "action": "shift"
-    },
-    "treatment_dates": {
-      "pattern": "\\b(\\d{2}\\.\\d{2}\\.\\d{4})\\b",
-      "action": "shift_relative"
+      "action": "remove"
     }
   },
   
@@ -199,7 +183,7 @@
     "CITY": "redact",
     "ORGANIZATION": "redact",
     "MEDICAL_FACILITY": "redact",
-    "BIRTHDATE": "shift_date",
+    "BIRTHDATE": "redact",
     "CASE_ID": "redact",
     "PHONE": "redact",
     "PHONE_MOBILE": "redact",
@@ -212,7 +196,8 @@
     "POSTAL_CODE": "redact",
     "CITY_ADJECTIVE": "redact",
     "FACILITY_TYPE": "redact",
-    "FACILITY_FULL_NAME": "redact"
+    "FACILITY_FULL_NAME": "redact",
+    "HK_NUMBER": "redact"
   },
   
   "image_pii_patterns": {

@@ -8,7 +8,6 @@ import json
 
 from src.zone_anonymizer import ZoneBasedAnonymizer
 from src.config import AnonymizationTemplate, ZoneConfig, SignatureBlockConfig
-from src.date_shifter import DateShifter
 
 
 class TestSeparatePageZones:

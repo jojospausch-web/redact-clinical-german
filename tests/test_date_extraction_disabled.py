@@ -59,7 +59,7 @@ def test_date_not_in_pii_mechanisms():
     
     # BIRTHDATE should still be there
     assert "BIRTHDATE" in template.pii_mechanisms, "BIRTHDATE should remain in pii_mechanisms"
-    assert template.pii_mechanisms["BIRTHDATE"] == "shift_date"
+    assert template.pii_mechanisms["BIRTHDATE"] == "redact"
 
 
 def test_date_patterns_removed_from_structured_patterns():
