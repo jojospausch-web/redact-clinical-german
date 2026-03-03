@@ -108,6 +108,31 @@
         "2": "FACILITY_FULL_NAME"
       },
       "type": "MEDICAL_FACILITY"
+    },
+    "phone_landline": {
+      "pattern": "(?:Tel\\.?:|Telefon:|Nummer:?)?\\s*(?:\\+49\\s?)?(?:\\(0\\))?\\s*(\\d{2,5})[\\s\\-\\/](\\d{3,9})(?:[\\s\\-](\\d{2,4}))?",
+      "type": "PHONE",
+      "comment": "Festnetz: 0561/937690, Tel.: 030-12345678"
+    },
+    "phone_mobile": {
+      "pattern": "(?:Mobil:|Handy:)?\\s*(?:\\+49\\s?)?(0?1[5-7][0-9])[\\s\\-\\/]?(\\d{7,8})",
+      "type": "PHONE_MOBILE",
+      "comment": "Mobil: 0173/1234567, +49 173 12345678"
+    },
+    "phone_context": {
+      "pattern": "(?:unter|über|Nummer)\\s+(?:der\\s+)?(?:Nummer\\s+)?(\\d{3,5}(?:[\\s\\-\\/]\\d{3,9})?(?:[\\s\\-]\\d{2,4})?)\\s+(?:erreichbar|telefonisch|zu erreichen|kontaktieren)",
+      "type": "PHONE",
+      "comment": "Kontext: 'unter 937690 erreichbar'"
+    },
+    "email": {
+      "pattern": "\\b([a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,253}\\.[a-zA-Z]{2,})",
+      "type": "EMAIL",
+      "comment": "E-Mail: max@klinikum.de"
+    },
+    "fax": {
+      "pattern": "(?:Fax:|Telefax:|Fax-Nr\\.?:?)\\s*(?:\\+49\\s?)?(?:\\(0\\))?\\s*(\\d{2,5})[\\s\\-\\/](\\d{3,9})",
+      "type": "FAX",
+      "comment": "Fax: 0561/937691"
     }
   },
   
@@ -177,7 +202,9 @@
     "BIRTHDATE": "shift_date",
     "CASE_ID": "redact",
     "PHONE": "redact",
+    "PHONE_MOBILE": "redact",
     "EMAIL": "redact",
+    "FAX": "redact",
     "IBAN": "redact",
     "SALUTATION": "redact",
     "LASTNAME": "redact",
