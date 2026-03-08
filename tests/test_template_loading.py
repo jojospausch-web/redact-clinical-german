@@ -23,7 +23,7 @@ class TestTemplateLoading:
         
         # Verify basic structure
         assert config.template_name == "German-Clinical-Structured-v2"
-        assert config.version == "2.0.0"
+        assert config.version == "2.1.0"
         
     def test_template_has_required_fields(self):
         """Test that template has all required fields."""
