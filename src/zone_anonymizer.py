@@ -347,12 +347,13 @@ class ZoneBasedAnonymizer:
             areas = page.search_for(entity.text)
             
             for area in areas:
-                # Add padding to ensure complete coverage (especially important for right side)
+                # Minimal padding to handle font rendering edge cases
+                # Reduced from previous values (2-10px) to prevent over-redaction
                 extended_rect = fitz.Rect(
-                    area.x0 - 2,   # 2px left
-                    area.y0 - 2,   # 2px top
-                    area.x1 + 10,  # 10px right
-                    area.y1 + 2    # 2px bottom
+                    area.x0 - 1,   # 1px left (minimal padding)
+                    area.y0 - 1,   # 1px top (minimal padding)
+                    area.x1 + 2,   # 2px right (slightly more for italic fonts)
+                    area.y1 + 1    # 1px bottom (minimal padding)
                 )
                 # Standard black redaction for all entities
                 page.add_redact_annot(extended_rect, fill=(0, 0, 0))
