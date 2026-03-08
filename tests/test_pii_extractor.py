@@ -534,3 +534,101 @@ class TestWhitelistFunctionality:
         # Both should be extracted
         assert len(entities) == 2
 
+
+class TestSalutationWithNamePattern:
+    """Test cases for the salutation_with_name pattern."""
+
+    def setup_method(self):
+        """Set up extractor with the salutation_with_name pattern."""
+        self.patterns = {
+            "salutation_with_name": PatternGroup(
+                pattern=r"(?:Herr|Frau)\s+(?!(?:Kollege|Kollegin)\b)([A-ZÄÖÜ][a-zäöüß-]{2,})",
+                type="PERSON_NAME"
+            )
+        }
+        self.extractor = StructuredPIIExtractor(self.patterns)
+
+    def test_herr_with_lastname(self):
+        """Test that 'Herr Jensen' is recognized and 'Jensen' extracted."""
+        entities = self.extractor.extract_pii("Herr Jensen schlägt als ersten Termin den 28.05.2025 vor.")
+        assert len(entities) == 1
+        assert entities[0].entity_type == "PERSON_NAME"
+        assert entities[0].text == "Jensen"
+
+    def test_frau_with_lastname(self):
+        """Test that 'Frau Meier' is recognized and 'Meier' extracted."""
+        entities = self.extractor.extract_pii("Der Patient Frau Meier wurde entlassen.")
+        assert len(entities) == 1
+        assert entities[0].entity_type == "PERSON_NAME"
+        assert entities[0].text == "Meier"
+
+    def test_herr_kollege_not_matched(self):
+        """Test that 'Herr Kollege' is NOT redacted (generic salutation)."""
+        entities = self.extractor.extract_pii("Sehr geehrter Herr Kollege,")
+        assert len(entities) == 0
+
+    def test_frau_kollegin_not_matched(self):
+        """Test that 'Frau Kollegin' is NOT redacted (generic salutation)."""
+        entities = self.extractor.extract_pii("Sehr geehrte Frau Kollegin,")
+        assert len(entities) == 0
+
+    def test_umlaut_lastname(self):
+        """Test that names with German umlauts are recognized."""
+        entities = self.extractor.extract_pii("Herr Müller wurde aufgenommen.")
+        assert len(entities) == 1
+        assert entities[0].text == "Müller"
+
+    def test_multiple_salutations(self):
+        """Test that multiple salutation patterns in one text are all found."""
+        text = "Herr Jensen und Frau Schmidt wurden überwiesen."
+        entities = self.extractor.extract_pii(text)
+        names = {e.text for e in entities}
+        assert "Jensen" in names
+        assert "Schmidt" in names
+
+    def test_hyphenated_lastname(self):
+        """Test that hyphenated names are recognized."""
+        entities = self.extractor.extract_pii("Frau Müller-Weber wurde entlassen.")
+        assert len(entities) == 1
+        assert entities[0].text == "Müller-Weber"
+
+
+class TestDoctorNameParenthesesPattern:
+    """Test cases for the doctor_name_parentheses pattern."""
+
+    def setup_method(self):
+        """Set up extractor with the doctor_name_parentheses pattern."""
+        self.patterns = {
+            "doctor_name_parentheses": PatternGroup(
+                pattern=r"\(((Prof\.|Dr\.|PD)(?:[^\)]+))\)",
+                type="DOCTOR_NAME"
+            )
+        }
+        self.extractor = StructuredPIIExtractor(self.patterns)
+
+    def test_pd_dr_in_parentheses(self):
+        """Test that '(PD Dr. Christoph Jensen)' is recognized."""
+        entities = self.extractor.extract_pii(
+            "im Ambulanten Herzzentrum Kassel (PD Dr. Christoph Jensen)."
+        )
+        assert len(entities) == 1
+        assert entities[0].entity_type == "DOCTOR_NAME"
+        assert "Christoph Jensen" in entities[0].text
+
+    def test_prof_med_in_parentheses(self):
+        """Test that '(Prof. med. Müller)' is recognized."""
+        entities = self.extractor.extract_pii("Behandelnder Arzt (Prof. med. Müller)")
+        assert len(entities) == 1
+        assert "Müller" in entities[0].text
+
+    def test_dr_in_parentheses(self):
+        """Test that '(Dr. Schmidt)' is recognized."""
+        entities = self.extractor.extract_pii("Die Überweisung erfolgte durch (Dr. Schmidt).")
+        assert len(entities) == 1
+        assert entities[0].text.strip() == "Dr. Schmidt"
+
+    def test_doctor_without_parentheses_not_matched(self):
+        """Test that doctor names without parentheses are NOT matched by this pattern."""
+        entities = self.extractor.extract_pii("Dr. Jensen übernimmt die Behandlung.")
+        assert len(entities) == 0
+

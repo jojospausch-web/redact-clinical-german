@@ -63,6 +63,16 @@
         "3": "CITY"
       }
     },
+    "doctor_name_parentheses": {
+      "pattern": "\\(((Prof\\.|Dr\\.|PD)(?:[^\\)]+))\\)",
+      "type": "DOCTOR_NAME",
+      "comment": "Matches doctor names enclosed in parentheses: (PD Dr. Christoph Jensen)"
+    },
+    "salutation_with_name": {
+      "pattern": "(?:Herr|Frau)\\s+(?!(?:Kollege|Kollegin)\\b)([A-ZÄÖÜ][a-zäöüß-]{2,})",
+      "type": "PERSON_NAME",
+      "comment": "Matches 'Herr Jensen', 'Frau Meier' (excludes 'Herr Kollege' / 'Frau Kollegin')"
+    },
     "doctor_signature": {
       "context_trigger": "Mit freundlichen Grüßen",
       "pattern": "(Prof\\.|Dr\\.|PD)\\s+(med\\.\\s+)?([A-ZÄÖÜ][a-zäöüß-]+(?:\\s+[A-ZÄÖÜ][a-zäöüß-]+)+)",
@@ -186,6 +196,7 @@
   
   "pii_mechanisms": {
     "PATIENT_NAME": "redact",
+    "PERSON_NAME": "redact",
     "DOCTOR_NAME": "redact",
     "REFERRING_DOCTOR": "redact",
     "ADDRESS": "redact",
