@@ -237,8 +237,181 @@ class TestStructuredPIIExtractor:
         assert cities[1].text == "Hamburg"
 
 
+class TestFallnummerPattern:
+    """Test cases for the extended case_id pattern including Fallnummer variants."""
+
+    def setup_method(self):
+        """Set up extractor with the extended case_id pattern."""
+        self.patterns = {
+            "case_id": PatternGroup(
+                pattern=r"(?:Pat\.?-?(?:Nr\.?|Nummer)|Fall-?(?:Nr\.?|Nummer)):?\s*([0-9]{6,10})",
+                type="CASE_ID"
+            )
+        }
+        self.extractor = StructuredPIIExtractor(self.patterns)
+
+    def test_fallnummer(self):
+        """Test that 'Fallnummer: 310736' is recognized."""
+        entities = self.extractor.extract_pii("Fallnummer: 310736")
+        assert len(entities) == 1
+        assert entities[0].entity_type == "CASE_ID"
+        assert entities[0].text == "310736"
+
+    def test_fall_nr_with_dot(self):
+        """Test that 'Fall-Nr.: 310736' is recognized."""
+        entities = self.extractor.extract_pii("Fall-Nr.: 310736")
+        assert len(entities) == 1
+        assert entities[0].text == "310736"
+
+    def test_fall_nummer(self):
+        """Test that 'Fall-Nummer: 310736' is recognized."""
+        entities = self.extractor.extract_pii("Fall-Nummer: 310736")
+        assert len(entities) == 1
+        assert entities[0].text == "310736"
+
+    def test_fallnr_no_separator(self):
+        """Test that 'FallNr 310736' is recognized."""
+        entities = self.extractor.extract_pii("FallNr 310736")
+        assert len(entities) == 1
+        assert entities[0].text == "310736"
+
+    def test_pat_nr_still_works(self):
+        """Test that the original 'Pat.-Nr.: 123456' still works."""
+        entities = self.extractor.extract_pii("Pat.-Nr.: 123456")
+        assert len(entities) == 1
+        assert entities[0].text == "123456"
+
+    def test_pat_nummer(self):
+        """Test that 'Pat-Nummer: 123456' is recognized."""
+        entities = self.extractor.extract_pii("Pat-Nummer: 123456")
+        assert len(entities) == 1
+        assert entities[0].text == "123456"
+
+    def test_fallnummer_with_many_spaces(self):
+        """Test 'Fallnummer:        310736' (many spaces, as in real PDFs)."""
+        entities = self.extractor.extract_pii("Fallnummer:        310736")
+        assert len(entities) == 1
+        assert entities[0].text == "310736"
+
+
+class TestMedicalFacilityPattern:
+    """Test cases for the new medical_facility pattern."""
+
+    def setup_method(self):
+        """Set up extractor with the medical_facility pattern."""
+        self.patterns = {
+            "medical_facility": PatternGroup(
+                pattern=r"(?:Ambulante[sn]?\s+)?(Herzzentrum|Tumorzentrum|Lungenzentrum|Ambulanzzentrum|Rehabilitationszentrum|Reha-?Zentrum|Rehaklinik|Klinik(?: und Rehabilitationszentrum)?)\s+((?:Bad\s+)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+(?:am|an|der|im|in|ob)\s+[A-ZÄÖÜ][a-zäöüß]+)?)",
+                groups={
+                    "1": "FACILITY_TYPE",
+                    "2": "CITY"
+                }
+            )
+        }
+        self.extractor = StructuredPIIExtractor(self.patterns)
+
+    def test_ambulanten_herzzentrum_kassel(self):
+        """Test that 'Ambulanten Herzzentrum Kassel' is recognized."""
+        entities = self.extractor.extract_pii("im Ambulanten Herzzentrum Kassel (PD Dr. Jensen)")
+        facility = next((e for e in entities if e.entity_type == "FACILITY_TYPE"), None)
+        city = next((e for e in entities if e.entity_type == "CITY"), None)
+        assert facility is not None
+        assert facility.text == "Herzzentrum"
+        assert city is not None
+        assert city.text == "Kassel"
+
+    def test_ambulantes_herzzentrum(self):
+        """Test that 'Ambulantes Herzzentrum Kassel' is recognized."""
+        entities = self.extractor.extract_pii("das Ambulantes Herzzentrum Kassel")
+        assert any(e.entity_type == "FACILITY_TYPE" and e.text == "Herzzentrum" for e in entities)
+
+    def test_klinik_und_rehabilitationszentrum(self):
+        """Test that 'Klinik und Rehabilitationszentrum Lippoldsberg' is recognized."""
+        entities = self.extractor.extract_pii("die Klinik und Rehabilitationszentrum Lippoldsberg")
+        facility = next((e for e in entities if e.entity_type == "FACILITY_TYPE"), None)
+        city = next((e for e in entities if e.entity_type == "CITY"), None)
+        assert facility is not None
+        assert "Klinik" in facility.text
+        assert city is not None
+        assert city.text == "Lippoldsberg"
+
+    def test_rehabilitationszentrum(self):
+        """Test that 'Rehabilitationszentrum Lippoldsberg' is recognized."""
+        entities = self.extractor.extract_pii("Rehabilitationszentrum Lippoldsberg")
+        assert any(e.entity_type == "CITY" and e.text == "Lippoldsberg" for e in entities)
+
+    def test_rehaklinik(self):
+        """Test that 'Rehaklinik Kassel' is recognized."""
+        entities = self.extractor.extract_pii("Rehaklinik Kassel")
+        assert any(e.entity_type == "FACILITY_TYPE" and e.text == "Rehaklinik" for e in entities)
+
+    def test_city_with_am_suffix(self):
+        """Test that cities with 'am' connector are recognized (e.g. 'Frankfurt am Main')."""
+        entities = self.extractor.extract_pii("Herzzentrum Frankfurt am Main")
+        city = next((e for e in entities if e.entity_type == "CITY"), None)
+        assert city is not None
+        assert city.text == "Frankfurt am Main"
+
+    def test_city_with_bad_prefix(self):
+        """Test that cities with 'Bad' prefix are recognized (e.g. 'Bad Homburg')."""
+        entities = self.extractor.extract_pii("Rehaklinik Bad Homburg")
+        city = next((e for e in entities if e.entity_type == "CITY"), None)
+        assert city is not None
+        assert city.text == "Bad Homburg"
+
+
+class TestWhitespaceNormalization:
+    """Test cases for whitespace normalization in extract_pii."""
+
+    def setup_method(self):
+        """Set up extractor with a simple pattern."""
+        self.patterns = {
+            "case_id": PatternGroup(
+                pattern=r"(?:Pat\.?-?(?:Nr\.?|Nummer)|Fall-?(?:Nr\.?|Nummer)):?\s*([0-9]{6,10})",
+                type="CASE_ID"
+            )
+        }
+        self.extractor = StructuredPIIExtractor(self.patterns)
+
+    def test_non_breaking_space_normalized(self):
+        """Test that non-breaking space (\\xa0) is normalized to regular space."""
+        # Non-breaking space between label and number
+        text = "Fallnummer:\xa0310736"
+        entities = self.extractor.extract_pii(text)
+        assert len(entities) == 1
+        assert entities[0].text == "310736"
+
+    def test_narrow_no_break_space_normalized(self):
+        """Test that narrow no-break space (\\u202f) is normalized."""
+        text = "Fallnummer:\u202f310736"
+        entities = self.extractor.extract_pii(text)
+        assert len(entities) == 1
+        assert entities[0].text == "310736"
+
+    def test_whitelist_with_non_breaking_space(self):
+        """Test that whitelist works consistently with non-breaking spaces."""
+        from src.config import WhitelistConfig
+
+        patterns = {
+            "device": PatternGroup(
+                pattern=r"\b(Medtronic Evolut)\b",
+                type="DEVICE"
+            )
+        }
+        whitelist = WhitelistConfig(
+            medical_terms=[],
+            anatomical_terms=[],
+            device_names=["Medtronic Evolut"]
+        )
+        extractor = StructuredPIIExtractor(patterns, whitelist)
+
+        # Non-breaking space variant should be normalized and thus whitelisted
+        text = "Medtronic\xa0Evolut"
+        entities = extractor.extract_pii(text)
+        assert len(entities) == 0  # Should be whitelisted, not extracted
+
+
 class TestWhitelistFunctionality:
-    """Test cases for whitelist functionality."""
     
     def test_whitelist_excludes_medical_terms(self):
         """Test that whitelisted medical terms are not extracted as PII."""

@@ -98,6 +98,15 @@ class StructuredPIIExtractor:
         """
         entities = []
         
+        # Normalize whitespace characters BEFORE pattern matching
+        # Different PDFs may use different Unicode space characters (non-breaking spaces, etc.)
+        # This ensures consistent pattern matching regardless of PDF encoding
+        text = text.replace('\xa0', ' ')      # Non-breaking space (most common in PDFs)
+        text = text.replace('\u202f', ' ')    # Narrow no-break space
+        text = text.replace('\u2009', ' ')    # Thin space
+        text = text.replace('\u2007', ' ')    # Figure space
+        text = re.sub(r'\s+', ' ', text)      # Collapse multiple consecutive spaces
+
         for pattern_name, pattern_config in self.patterns.items():
             # Check if pattern is enabled
             if active_patterns is not None:
