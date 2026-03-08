@@ -41,8 +41,9 @@
       }
     },
     "case_id": {
-      "pattern": "Pat\\.?-?Nr\\.?:?\\s*([0-9]{6,10})",
-      "type": "CASE_ID"
+      "pattern": "(?:Pat\\.?-?(?:Nr\\.?|Nummer)|Fall-?(?:Nr\\.?|Nummer)):?\\s*([0-9]{6,10})",
+      "type": "CASE_ID",
+      "comment": "Matches Pat.-Nr., Pat-Nummer, Fall-Nr., Fall-Nummer, Fallnummer with all variations"
     },
     "address": {
       "pattern": "([A-ZÄÖÜ][a-zäöüß]+(?:straße|str\\.|weg|platz|allee))\\s+(\\d+[a-z]?),?\\s+(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+)",
@@ -138,6 +139,14 @@
       "pattern": "HK-?Nr\\.?:?\\s*([0-9]{4}\\/[0-9]{2})",
       "type": "HK_NUMBER",
       "comment": "Format: HK-Nr.: 1234/56"
+    },
+    "medical_facility": {
+      "pattern": "(?:Ambulante[sn]?\\s+)?(Herzzentrum|Tumorzentrum|Lungenzentrum|Ambulanzzentrum|Rehabilitationszentrum|Reha-?Zentrum|Rehaklinik|Klinik(?: und Rehabilitationszentrum)?)\\s+((?:Bad\\s+)?[A-ZÄÖÜ][a-zäöüß]+(?:\\s+(?:am|an|der|im|in|ob)\\s+[A-ZÄÖÜ][a-zäöüß]+)?)",
+      "groups": {
+        "1": "FACILITY_TYPE",
+        "2": "CITY"
+      },
+      "comment": "Matches medical facilities with city names: 'Ambulantes Herzzentrum Kassel', 'Klinik und Rehabilitationszentrum Lippoldsberg'"
     }
   },
   
