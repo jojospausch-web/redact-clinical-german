@@ -42,16 +42,23 @@ class TestWordBoundaries:
         assert len(hamburg_entities) == 0
     
     def test_substring_not_matched(self):
-        """Test that substrings like 'Klappe' in 'Aortenklappenbioprothese' are not matched."""
+        """Patterns listed in PATTERNS_REQUIRING_WORD_BOUNDARY must not match substrings.
+
+        We use 'phone_landline' (which IS in the boundary list) with a simple
+        pattern to verify that the word-boundary gate is activated for that
+        pattern name.  The actual phone regex is tested separately in
+        tests/test_false_positives.py.
+        """
+        # Use "phone_landline" which is in PATTERNS_REQUIRING_WORD_BOUNDARY
         patterns = {
-            "test_pattern": PatternGroup(
+            "phone_landline": PatternGroup(
                 pattern=r"(Klappe)",
                 type="TEST_ENTITY"
             )
         }
         extractor = StructuredPIIExtractor(patterns)
         
-        # Negative: Medical term
+        # Negative: phone_landline enforces word boundaries — substring must not match
         text = "Aortenklappenbioprothese implantiert"
         entities = extractor.extract_pii(text)
         # "Klappe" should NOT be extracted from "Aortenklappenbioprothese"
@@ -239,3 +246,53 @@ class TestIsWholeWordMethod:
         start2 = text2.lower().index("klappen")
         end2 = start2 + len("klappen")
         assert extractor._is_whole_word(text2, start2, end2) is False
+
+    def test_is_whole_word_umlaut_before(self):
+        """German umlaut directly before match must prevent word boundary from passing."""
+        patterns = {}
+        extractor = StructuredPIIExtractor(patterns)
+
+        # "Hämatologie": match starts at "matologie" (pos 2, after "Hä")
+        text = "Hämatologie"
+        match_start = 2  # after "Hä"
+        match_end = len(text)
+
+        # ä is a Unicode letter → should be considered a word char → returns False
+        assert extractor._is_whole_word(text, match_start, match_end) is False
+
+    def test_is_whole_word_umlaut_after(self):
+        """German umlaut directly after match must prevent word boundary from passing."""
+        patterns = {}
+        extractor = StructuredPIIExtractor(patterns)
+
+        # "Testärztin": match = "Test" (pos 0-4), followed by "ä"
+        text = "Testärztin"
+        match_start = 0
+        match_end = 4  # "Test"
+
+        # ä is a Unicode letter → should be considered a word char → returns False
+        assert extractor._is_whole_word(text, match_start, match_end) is False
+
+    def test_is_whole_word_space_boundary_with_umlauts_nearby(self):
+        """Spaces around a match are still valid word boundaries even when umlauts are nearby."""
+        patterns = {}
+        extractor = StructuredPIIExtractor(patterns)
+
+        # "Für Jensen" — "Jensen" is a whole word (space before, end of text after)
+        text = "Für Jensen"
+        match_start = 4  # "J"
+        match_end = 10   # end of "Jensen"
+
+        assert extractor._is_whole_word(text, match_start, match_end) is True
+
+    def test_is_whole_word_eszett(self):
+        """ß (Eszett) must be treated as a word character."""
+        patterns = {}
+        extractor = StructuredPIIExtractor(patterns)
+
+        # "Fußballspieler": "ball" is inside the word
+        text = "Fußballspieler"
+        start = text.index("ball")
+        end = start + len("ball")
+
+        assert extractor._is_whole_word(text, start, end) is False
