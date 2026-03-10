@@ -36,6 +36,8 @@ DEFAULT_TEMPLATE: dict = {
         "case_id": True,
         "address": True,
         "doctor_name": True,
+        "doctor_name_parentheses": True,
+        "salutation_with_name": True,
         "doctor_with_location": True,
         "doctor_signature": True,
         "referring_doctor": True,
