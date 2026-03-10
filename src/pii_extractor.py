@@ -209,17 +209,44 @@ class StructuredPIIExtractor:
                 start_pos = match.start(0)
                 end_pos = match.end(0)
             
+            # Debug logging BEFORE any filtering
+            context_start = max(0, start_pos - 20)
+            context_end = min(len(text), end_pos + 20)
+            context_text = text[context_start:context_end]
+            logger.debug(
+                f"[MATCH FOUND] Pattern: {pattern_name} | "
+                f"Type: {config.type} | "
+                f"Text: '{entity_text}' | "
+                f"Pos: {start_pos}-{end_pos} | "
+                f"Context: ...{context_text}..."
+            )
+
             # Apply word boundary check only for patterns that require it
             if self._requires_word_boundary_check(pattern_name):
                 if not self._is_whole_word(text, start_pos, end_pos):
-                    logger.debug(f"Skipped substring match '{entity_text}' in pattern {pattern_name}")
+                    logger.debug(
+                        f"[SKIP - BOUNDARY] Pattern: {pattern_name} | "
+                        f"Text: '{entity_text}' | "
+                        f"Reason: Not a whole word (substring match)"
+                    )
                     continue
             
             # Check whitelist
             if self._is_whitelisted(entity_text):
-                logger.debug(f"Skipped whitelisted term: {entity_text}")
+                logger.debug(
+                    f"[SKIP - WHITELIST] Pattern: {pattern_name} | "
+                    f"Text: '{entity_text}' | "
+                    f"Reason: On whitelist"
+                )
                 continue
-            
+
+            logger.info(
+                f"[ENTITY EXTRACTED] Pattern: {pattern_name} | "
+                f"Type: {config.type} | "
+                f"Text: '{entity_text}' | "
+                f"Pos: {start_pos}-{end_pos}"
+            )
+
             entities.append(PIIEntity(
                 text=entity_text,
                 entity_type=config.type or "UNKNOWN",
@@ -254,17 +281,44 @@ class StructuredPIIExtractor:
                         # Apply word boundary check for each group (only if required)
                         start_pos = match.start(group_idx)
                         end_pos = match.end(group_idx)
-                        
+
+                        # Debug logging BEFORE any filtering
+                        context_start = max(0, start_pos - 20)
+                        context_end = min(len(text), end_pos + 20)
+                        context_text = text[context_start:context_end]
+                        logger.debug(
+                            f"[MATCH FOUND] Pattern: {pattern_name} (group {group_num}) | "
+                            f"Type: {entity_type} | "
+                            f"Text: '{entity_text}' | "
+                            f"Pos: {start_pos}-{end_pos} | "
+                            f"Context: ...{context_text}..."
+                        )
+
                         if self._requires_word_boundary_check(pattern_name):
                             if not self._is_whole_word(text, start_pos, end_pos):
-                                logger.debug(f"Skipped substring match '{entity_text}' in group {group_num}")
+                                logger.debug(
+                                    f"[SKIP - BOUNDARY] Pattern: {pattern_name} (group {group_num}) | "
+                                    f"Text: '{entity_text}' | "
+                                    f"Reason: Not a whole word (substring match)"
+                                )
                                 continue
                         
                         # Check whitelist
                         if self._is_whitelisted(entity_text):
-                            logger.debug(f"Skipped whitelisted term: {entity_text}")
+                            logger.debug(
+                                f"[SKIP - WHITELIST] Pattern: {pattern_name} (group {group_num}) | "
+                                f"Text: '{entity_text}' | "
+                                f"Reason: On whitelist"
+                            )
                             continue
-                        
+
+                        logger.info(
+                            f"[ENTITY EXTRACTED] Pattern: {pattern_name} (group {group_num}) | "
+                            f"Type: {entity_type} | "
+                            f"Text: '{entity_text}' | "
+                            f"Pos: {start_pos}-{end_pos}"
+                        )
+
                         entities.append(PIIEntity(
                             text=entity_text,
                             entity_type=entity_type,
@@ -306,20 +360,48 @@ class StructuredPIIExtractor:
             # Adjust positions relative to the full text
             actual_start = search_start + match.start(0)
             actual_end = search_start + match.end(0)
-            
+            entity_text = match.group(0)
+
+            # Debug logging BEFORE any filtering
+            context_start = max(0, actual_start - 20)
+            context_end = min(len(text), actual_end + 20)
+            context_text = text[context_start:context_end]
+            logger.debug(
+                f"[MATCH FOUND] Pattern: {pattern_name} (context: '{config.context_trigger}') | "
+                f"Type: {config.type} | "
+                f"Text: '{entity_text}' | "
+                f"Pos: {actual_start}-{actual_end} | "
+                f"Context: ...{context_text}..."
+            )
+
             # Apply word boundary check only for patterns that require it
             if self._requires_word_boundary_check(pattern_name):
                 if not self._is_whole_word(text, actual_start, actual_end):
-                    logger.debug(f"Skipped substring match '{match.group(0)}' in context")
+                    logger.debug(
+                        f"[SKIP - BOUNDARY] Pattern: {pattern_name} | "
+                        f"Text: '{entity_text}' | "
+                        f"Reason: Not a whole word (substring match)"
+                    )
                     continue
             
             # Check whitelist
-            if self._is_whitelisted(match.group(0)):
-                logger.debug(f"Skipped whitelisted term: {match.group(0)}")
+            if self._is_whitelisted(entity_text):
+                logger.debug(
+                    f"[SKIP - WHITELIST] Pattern: {pattern_name} | "
+                    f"Text: '{entity_text}' | "
+                    f"Reason: On whitelist"
+                )
                 continue
-            
+
+            logger.info(
+                f"[ENTITY EXTRACTED] Pattern: {pattern_name} (context: '{config.context_trigger}') | "
+                f"Type: {config.type} | "
+                f"Text: '{entity_text}' | "
+                f"Pos: {actual_start}-{actual_end}"
+            )
+
             entities.append(PIIEntity(
-                text=match.group(0),
+                text=entity_text,
                 entity_type=config.type or "CONTEXT_BASED",
                 start_pos=actual_start,
                 end_pos=actual_end,
