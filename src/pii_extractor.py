@@ -1,11 +1,37 @@
 """Structured PII extraction using contextual regex patterns."""
 
 import re
+import unicodedata
 import logging
 from typing import List, Dict, Optional
 from src.config import PIIEntity, PatternGroup
 
 logger = logging.getLogger(__name__)
+
+# Patterns that require strict word boundary enforcement.
+# These patterns must NOT match substrings inside longer words.
+#
+# Why these patterns need boundaries:
+#   - phone_landline / phone_mobile / phone_context / fax: Number sequences
+#     can appear in many innocent positions (e.g. "0561" in a case number
+#     or blood-pressure notation). Without a boundary gate the pattern would
+#     fire on partial matches and produce false-positive redactions.
+#   - salutation_with_name: The prefix "Herr"/"Frau" is short; without a
+#     boundary check the name capture group could match inside longer words.
+#   - email: The \b anchor in the email regex already helps, but the
+#     boundary check adds a consistent second guard.
+#
+# Other patterns (e.g. doctor_name, case_id, patient_block) rely on
+# structural prefix tokens (titles, keywords) in their regex and therefore
+# do not need an additional boundary gate.
+PATTERNS_REQUIRING_WORD_BOUNDARY = {
+    "phone_landline",
+    "phone_mobile",
+    "phone_context",
+    "fax",
+    "salutation_with_name",
+    "email",
+}
 
 
 class StructuredPIIExtractor:
@@ -38,36 +64,60 @@ class StructuredPIIExtractor:
                 )
             )
     
+    def _requires_word_boundary_check(self, pattern_name: str) -> bool:
+        """Determine if a pattern requires word boundary validation.
+
+        Args:
+            pattern_name: Name of the pattern
+
+        Returns:
+            True if word boundary check is required
+        """
+        return pattern_name in PATTERNS_REQUIRING_WORD_BOUNDARY
+
     def _is_whole_word(self, text: str, match_start: int, match_end: int) -> bool:
         """
-        Prüft ob ein Match ein ganzes Wort ist (keine Substring-Match).
-        
+        Check if a match is a whole word (not a substring).
+
+        Correctly handles German umlauts (ä, ö, ü, ß) and other Unicode
+        letters as word characters.
+
         Args:
-            text: Gesamter Text
-            match_start: Start-Position des Match
-            match_end: End-Position des Match
-            
+            text: Full text
+            match_start: Start position of match
+            match_end: End position of match
+
         Returns:
-            True wenn ganzes Wort, False wenn Substring
-            
+            True if whole word, False if substring
+
         Examples:
-            "in Hamburg" → Match "Hamburg" → True (Leerzeichen davor/danach)
-            "Roshamburger" → Match "Hamburg" → False ('b' folgt direkt)
+            "in Hamburg" → Match "Hamburg" → True (space before/after)
+            "Roshamburger" → Match "Hamburg" → False ('b' follows directly)
+            "Hämatologie" → Match "matologie" → False ('ä' precedes directly)
         """
-        # Prüfe Zeichen VOR dem Match
+        def is_word_char(char: str) -> bool:
+            """Return True for any character that is part of a word.
+
+            Covers all Unicode letters (including ä, ö, ü, ß) and decimal
+            digits. Using Unicode categories ensures German umlauts are
+            correctly treated as word characters.
+            """
+            category = unicodedata.category(char)
+            return (
+                category.startswith('L') or  # All Unicode letters (Ll, Lu, Lt, Lm, Lo)
+                category == 'Nd'             # Decimal digits
+            )
+
+        # Check character BEFORE match
         if match_start > 0:
-            char_before = text[match_start - 1]
-            # Wenn alphanumerisch, ist es kein ganzes Wort
-            if char_before.isalnum():
+            if is_word_char(text[match_start - 1]):
                 return False
-        
-        # Prüfe Zeichen NACH dem Match
+
+        # Check character AFTER match
         if match_end < len(text):
-            char_after = text[match_end]
-            # Wenn alphanumerisch, ist es kein ganzes Wort
-            if char_after.isalnum():
+            if is_word_char(text[match_end]):
                 return False
-        
+
         return True
     
     def _is_whitelisted(self, entity_text: str) -> bool:
@@ -118,27 +168,28 @@ class StructuredPIIExtractor:
             if pattern_config.context_trigger:
                 # Context-based extraction
                 entities.extend(
-                    self._extract_with_context(text, pattern_config)
+                    self._extract_with_context(text, pattern_config, pattern_name)
                 )
             elif pattern_config.groups:
                 # Multi-group extraction
                 entities.extend(
-                    self._extract_with_groups(text, pattern_config)
+                    self._extract_with_groups(text, pattern_config, pattern_name)
                 )
             else:
                 # Simple pattern extraction
                 entities.extend(
-                    self._extract_simple(text, pattern_config)
+                    self._extract_simple(text, pattern_config, pattern_name)
                 )
         
         return entities
     
-    def _extract_simple(self, text: str, config: PatternGroup) -> List[PIIEntity]:
+    def _extract_simple(self, text: str, config: PatternGroup, pattern_name: str = "") -> List[PIIEntity]:
         """Extract PII using a simple regex pattern.
         
         Args:
             text: Text to search
             config: Pattern configuration
+            pattern_name: Name of the pattern (used for word boundary check)
         
         Returns:
             List of PIIEntity objects
@@ -158,10 +209,11 @@ class StructuredPIIExtractor:
                 start_pos = match.start(0)
                 end_pos = match.end(0)
             
-            # Apply word boundary check
-            if not self._is_whole_word(text, start_pos, end_pos):
-                logger.debug(f"Skipped substring match '{entity_text}' in pattern")
-                continue
+            # Apply word boundary check only for patterns that require it
+            if self._requires_word_boundary_check(pattern_name):
+                if not self._is_whole_word(text, start_pos, end_pos):
+                    logger.debug(f"Skipped substring match '{entity_text}' in pattern {pattern_name}")
+                    continue
             
             # Check whitelist
             if self._is_whitelisted(entity_text):
@@ -177,12 +229,13 @@ class StructuredPIIExtractor:
         
         return entities
     
-    def _extract_with_groups(self, text: str, config: PatternGroup) -> List[PIIEntity]:
+    def _extract_with_groups(self, text: str, config: PatternGroup, pattern_name: str = "") -> List[PIIEntity]:
         """Extract PII with multiple named groups.
         
         Args:
             text: Text to search
             config: Pattern configuration with group mappings
+            pattern_name: Name of the pattern (used for word boundary check)
         
         Returns:
             List of PIIEntity objects
@@ -198,13 +251,14 @@ class StructuredPIIExtractor:
                 if group_idx <= len(match.groups()):
                     entity_text = match.group(group_idx)
                     if entity_text:  # Only add non-empty groups
-                        # Apply word boundary check for each group
+                        # Apply word boundary check for each group (only if required)
                         start_pos = match.start(group_idx)
                         end_pos = match.end(group_idx)
                         
-                        if not self._is_whole_word(text, start_pos, end_pos):
-                            logger.debug(f"Skipped substring match '{entity_text}' in group {group_num}")
-                            continue
+                        if self._requires_word_boundary_check(pattern_name):
+                            if not self._is_whole_word(text, start_pos, end_pos):
+                                logger.debug(f"Skipped substring match '{entity_text}' in group {group_num}")
+                                continue
                         
                         # Check whitelist
                         if self._is_whitelisted(entity_text):
@@ -221,12 +275,13 @@ class StructuredPIIExtractor:
         
         return entities
     
-    def _extract_with_context(self, text: str, config: PatternGroup) -> List[PIIEntity]:
+    def _extract_with_context(self, text: str, config: PatternGroup, pattern_name: str = "") -> List[PIIEntity]:
         """Extract PII only within a specific context.
         
         Args:
             text: Text to search
             config: Pattern configuration with context trigger
+            pattern_name: Name of the pattern (used for word boundary check)
         
         Returns:
             List of PIIEntity objects
@@ -252,10 +307,11 @@ class StructuredPIIExtractor:
             actual_start = search_start + match.start(0)
             actual_end = search_start + match.end(0)
             
-            # Apply word boundary check
-            if not self._is_whole_word(text, actual_start, actual_end):
-                logger.debug(f"Skipped substring match '{match.group(0)}' in context")
-                continue
+            # Apply word boundary check only for patterns that require it
+            if self._requires_word_boundary_check(pattern_name):
+                if not self._is_whole_word(text, actual_start, actual_end):
+                    logger.debug(f"Skipped substring match '{match.group(0)}' in context")
+                    continue
             
             # Check whitelist
             if self._is_whitelisted(match.group(0)):

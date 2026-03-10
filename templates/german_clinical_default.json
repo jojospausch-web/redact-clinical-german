@@ -1,6 +1,6 @@
 {
   "template_name": "German-Clinical-Structured-v2",
-  "version": "2.1.0",
+  "version": "2.2.0",
   
   "zones": {
     "header_page_1": {
@@ -121,9 +121,9 @@
       "type": "MEDICAL_FACILITY"
     },
     "phone_landline": {
-      "pattern": "(?:Tel\\.?:|Telefon:|Nummer:?)?\\s*(?:\\+49\\s?)?(?:\\(0\\))?\\s*(\\d{2,5})[\\s\\-\\/](\\d{3,9})(?:[\\s\\-](\\d{2,4}))?",
+      "pattern": "(?:(?:Tel\\.?:|Telefon:|Nummer:)\\s+|(?:(?:\\+49|0)\\s?)(?:\\(0\\))?\\s*)\\d{2,5}[\\s\\-\\/]\\d{3,9}(?:[\\s\\-]\\d{2,4})?",
       "type": "PHONE",
-      "comment": "Festnetz: 0561/937690, Tel.: 030-12345678"
+      "comment": "Festnetz: requires EITHER explicit prefix (Tel:, Telefon:, Nummer:) OR international/national prefix (+49, 0). Prevents matching number-like sequences in plain medical text."
     },
     "phone_mobile": {
       "pattern": "(?:Mobil:|Handy:)?\\s*(?:\\+49\\s?)?(0?1[5-7][0-9])[\\s\\-\\/]?(\\d{7,8})",
@@ -141,9 +141,9 @@
       "comment": "E-Mail: max@klinikum.de"
     },
     "fax": {
-      "pattern": "(?:Fax:|Telefax:|Fax-Nr\\.?:?)\\s*(?:\\+49\\s?)?(?:\\(0\\))?\\s*(\\d{2,5})[\\s\\-\\/](\\d{3,9})",
+      "pattern": "(?:Fax:|Telefax:|Fax-Nr\\.?:?)\\s+(?:\\+49\\s?)?(?:\\(0\\))?\\s*\\d{2,5}[\\s\\-\\/]\\d{3,9}",
       "type": "FAX",
-      "comment": "Fax: 0561/937691"
+      "comment": "Fax: MUST have explicit prefix (Fax:, Telefax:, Fax-Nr.:) followed by whitespace"
     },
     "hk_number": {
       "pattern": "HK-?Nr\\.?:?\\s*([0-9]{4}\\/[0-9]{2})",
