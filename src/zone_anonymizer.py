@@ -53,9 +53,26 @@ class ZoneBasedAnonymizer:
         }
         
         # Process each page
+        cut_off_page = None
+
         for page_num in range(len(doc)):
             page = doc[page_num]
-            
+
+            # If we are past the cut-off page, redact the entire page and skip
+            # normal processing.
+            if cut_off_page is not None and page_num > cut_off_page:
+                if (
+                    self.template.cut_after_keyword
+                    and self.template.cut_after_keyword.redact_all_following_pages
+                ):
+                    full_page_rect = fitz.Rect(0, 0, page.rect.width, page.rect.height)
+                    page.add_redact_annot(full_page_rect, fill=(0, 0, 0))
+                    logging.getLogger(__name__).info(
+                        f"Redacted full page {page_num + 1} (following cut-off)"
+                    )
+                    page.apply_redactions()
+                    continue
+
             # 1. Apply zone-based redaction (union system: all zones applied independently)
             self._redact_zones(page, page_num, stats)
             
@@ -70,6 +87,11 @@ class ZoneBasedAnonymizer:
             
             # 2d. Apply header-until-keyword redaction
             self._redact_header_until_keyword(page)
+
+            # 2e. Check for cut-off trigger on this page (before PII extraction so
+            #     any redaction annotation is applied in the same pass)
+            if cut_off_page is None:
+                cut_off_page = self._check_cutoff_trigger(page, page_num)
             
             # 3. Extract and analyze text for structured PII
             text = page.get_text()
@@ -357,3 +379,43 @@ class ZoneBasedAnonymizer:
                 )
                 # Standard black redaction for all entities
                 page.add_redact_annot(extended_rect, fill=(0, 0, 0))
+
+    def _check_cutoff_trigger(self, page: fitz.Page, page_num: int) -> Optional[int]:
+        """Check if the cut-off trigger keyword is on this page and redact below it.
+
+        Args:
+            page: PDF page object
+            page_num: Current page number (0-indexed)
+
+        Returns:
+            page_num if trigger found and redaction applied, None otherwise
+        """
+        if not self.template.cut_after_keyword:
+            return None
+
+        config = self.template.cut_after_keyword
+        if not config.enabled:
+            return None
+
+        instances = page.search_for(config.trigger)
+        if not instances:
+            return None
+
+        # Use the first (topmost) occurrence as the cut-off point so that the
+        # maximum amount of non-PII content above it is preserved.
+        trigger_y = instances[0].y0
+
+        # Redact everything from the top of the trigger text to the bottom of the page
+        redact_rect = fitz.Rect(
+            0,
+            trigger_y,
+            page.rect.width,
+            page.rect.height
+        )
+        page.add_redact_annot(redact_rect, fill=(0, 0, 0))
+        logging.getLogger(__name__).info(
+            f"Cut-off triggered on page {page_num + 1} at y={trigger_y} "
+            f"by keyword '{config.trigger}'"
+        )
+
+        return page_num

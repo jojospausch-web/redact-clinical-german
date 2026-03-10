@@ -67,6 +67,15 @@ class PersonalBlockConfig(BaseModel):
     redaction: str = "full"
 
 
+class CutAfterKeyword(BaseModel):
+    """Configuration for cutting document after a specific keyword."""
+    model_config = ConfigDict(extra='allow')
+
+    enabled: bool = False
+    trigger: str = ""
+    redact_all_following_pages: bool = True
+
+
 class AnonymizationTemplate(BaseModel):
     """Main configuration template for anonymization rules."""
     model_config = ConfigDict(extra='allow')
@@ -89,6 +98,7 @@ class AnonymizationTemplate(BaseModel):
     header_next: Optional[int] = None  # Header height for pages 2+
     active_patterns: Optional[Dict[str, bool]] = None  # Pattern activation map
     header_until_keyword: Optional[Dict[str, Any]] = None  # Header-until-keyword zone config
+    cut_after_keyword: Optional[CutAfterKeyword] = None  # Cut-off after trigger keyword
 
 
 class PIIEntity(BaseModel):

@@ -1,6 +1,6 @@
 {
   "template_name": "German-Clinical-Structured-v2",
-  "version": "2.0.0",
+  "version": "2.1.0",
   
   "zones": {
     "header_page_1": {
@@ -150,6 +150,11 @@
       "type": "HK_NUMBER",
       "comment": "Format: HK-Nr.: 1234/56"
     },
+    "pacemaker_id": {
+      "pattern": "\\b(?:DR|VR|PM|SM|ICD|CRT)\\s+\\d{6}\\b",
+      "type": "DEVICE_ID",
+      "comment": "Pacemaker/ICD serial numbers: DR 268880, VR 123456, ICD 987654, CRT 456789"
+    },
     "medical_facility": {
       "pattern": "(?:Ambulante[sn]?\\s+)?(Herzzentrum|Tumorzentrum|Lungenzentrum|Ambulanzzentrum|Rehabilitationszentrum|Reha-?Zentrum|Rehaklinik|Klinik(?: und Rehabilitationszentrum)?)\\s+((?:Bad\\s+)?[A-ZÄÖÜ][a-zäöüß]+(?:\\s+(?:am|an|der|im|in|ob)\\s+[A-ZÄÖÜ][a-zäöüß]+)?)",
       "groups": {
@@ -217,7 +222,8 @@
     "CITY_ADJECTIVE": "redact",
     "FACILITY_TYPE": "redact",
     "FACILITY_FULL_NAME": "redact",
-    "HK_NUMBER": "redact"
+    "HK_NUMBER": "redact",
+    "DEVICE_ID": "redact"
   },
   
   "image_pii_patterns": {
@@ -226,6 +232,12 @@
     "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}"
   },
   
-  "info": "Template für deutsche medizinische Arztbriefe mit kontextbasierter Orts-/Einrichtungserkennung und deutschen Monats-Namen."
+  "info": "Template für deutsche medizinische Arztbriefe mit kontextbasierter Orts-/Einrichtungserkennung und deutschen Monats-Namen.",
+
+  "cut_after_keyword": {
+    "enabled": true,
+    "trigger": "HÄMOSTASEOLOGIE Roche",
+    "redact_all_following_pages": true
+  }
 }
 
