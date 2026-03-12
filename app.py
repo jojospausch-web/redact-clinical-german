@@ -323,6 +323,23 @@ with st.sidebar:
 
     st.divider()
 
+    # ── Debug mode ────────────────────────────────────────────────────────────
+    st.header("⚙️ Debug-Einstellungen")
+
+    debug_mode = st.checkbox(
+        "Debug-Logging aktivieren",
+        value=False,
+        help="Zeigt detaillierte Muster-Match-Informationen in der Konsole an"
+    )
+
+    if debug_mode:
+        logging.getLogger().setLevel(logging.DEBUG)
+        st.success("✅ Debug-Logging aktiviert (Konsole prüfen)")
+    else:
+        logging.getLogger().setLevel(logging.INFO)
+
+    st.divider()
+
     st.markdown("💡 **Tipp:** Templates bearbeiten Sie unter\n**📝 Template Editor**")
 
     st.divider()
@@ -524,6 +541,22 @@ if 'results' in st.session_state and st.session_state['results']:
         file_name="anonymized_batch.zip",
         mime="application/zip"
     )
+
+    # ── Debug summary (shown when debug mode is active) ───────────────────────
+    if debug_mode:
+        st.subheader("🔍 Debug: Anonymisierungs-Zusammenfassung")
+        st.info(
+            "Detaillierte Muster-Match-Informationen wurden in die Konsole geloggt.\n"
+            "Suche nach `[MATCH FOUND]`, `[SKIP - BOUNDARY]`, "
+            "`[SKIP - WHITELIST]`, `[ENTITY EXTRACTED]` und `[LOCATION MATCH]`."
+        )
+        for result in st.session_state['results']:
+            stats = result['stats']
+            pii_count = stats.get('pii_entities_found', 0)
+            with st.expander(f"📄 {result['original_name']} — {pii_count} PII-Entität(en) gefunden"):
+                st.write(f"**Seiten verarbeitet:** {stats.get('total_pages', 0)}")
+                st.write(f"**PII-Entitäten gefunden:** {pii_count}")
+                st.write(f"**Zonen geschwärzt:** {stats.get('zones_redacted', 0)}")
 
 # Info section when no files uploaded
 if not uploaded_files:

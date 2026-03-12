@@ -1,8 +1,11 @@
 """Context-aware location anonymization for German cities."""
 
 import re
+import logging
 from typing import List, Dict, Set
 from src.location_database import LocationDatabase
+
+logger = logging.getLogger(__name__)
 
 
 class ContextAwareLocationAnonymizer:
@@ -52,7 +55,21 @@ class ContextAwareLocationAnonymizer:
         locations.extend(self._find_cities_in_referrals(text))
         
         # Deduplication (same position only once)
-        return self._deduplicate(locations)
+        result = self._deduplicate(locations)
+
+        logger.debug(
+            f"[LOCATION LOOKUP] Found {len(result)} location(s) in text "
+            f"({len(locations)} before deduplication)"
+        )
+        for loc in result:
+            logger.info(
+                f"[LOCATION MATCH] Text: '{loc['text']}' | "
+                f"Type: {loc['type']} | "
+                f"Context: {loc['context']} | "
+                f"Pos: {loc['start']}-{loc['end']}"
+            )
+
+        return result
     
     def _find_blacklisted(self, text: str) -> List[Dict]:
         """Blacklist entries are ALWAYS recognized (even without context).
@@ -67,6 +84,10 @@ class ContextAwareLocationAnonymizer:
         for term in self.blacklist:
             pattern = rf'\b{re.escape(term)}\b'
             for match in re.finditer(pattern, text, re.IGNORECASE):
+                logger.debug(
+                    f"[CITY LOOKUP] Blacklist hit: '{match.group(0)}' | "
+                    f"Pos: {match.start()}-{match.end()}"
+                )
                 found.append({
                     'text': match.group(0),
                     'start': match.start(),
@@ -96,7 +117,12 @@ class ContextAwareLocationAnonymizer:
             city_candidate = match.group(2).strip()
             
             # Check if city is in database
-            if self.city_db.is_city(city_candidate):
+            is_city = self.city_db.is_city(city_candidate)
+            logger.debug(
+                f"[CITY LOOKUP] PLZ context: '{plz} {city_candidate}' | "
+                f"Found in database: {is_city}"
+            )
+            if is_city:
                 found.append({
                     'text': city_candidate,
                     'start': match.start(2),
