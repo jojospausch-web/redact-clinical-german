@@ -50,9 +50,9 @@
       "type": "ADDRESS"
     },
     "doctor_name": {
-      "pattern": "((?:Prof\\.|Dr\\.|PD)\\s+(?:med\\.\\s+)?(?:[A-ZÄÖÜ][a-zäöüß-]+\\s*)+)",
+      "pattern": "((?:PD\\s+Dr\\.|Prof\\.\\s+Dr\\.|Dr\\.|Prof\\.|PD)\\s+(?:med\\.\\s+)?(?:(?-i:[A-ZÄÖÜ])[a-zäöüß-]+\\s+){0,2}(?-i:[A-ZÄÖÜ])[a-zäöüß-]+)",
       "type": "DOCTOR_NAME",
-      "comment": "Greedy: captures all names after title, including single lastname after 'PD Dr.'"
+      "comment": "Non-greedy: handles combined titles (PD Dr., Prof. Dr.), max 3 name parts; (?-i:[A-ZÄÖÜ]) is intentionally repeated for each name-part position to force uppercase-only matching in those sub-patterns even under the outer IGNORECASE flag, preventing lowercase verbs/adjectives from being consumed as additional name tokens."
     },
     "doctor_with_location": {
       "pattern": "Dr\\.\\s+([A-ZÄÖÜ][a-zäöüß-]+)(?:,\\s+([A-Z]{2,})\\s+([A-ZÄÖÜ][a-zäöüß]+))?",
@@ -85,15 +85,17 @@
       "type": "REFERRING_DOCTOR"
     },
     "postal_code_with_city": {
-      "pattern": "(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+)",
+      "pattern": "(?<![/\\d])(\\d{5})\\s+([A-ZÄÖÜ][a-zäöüß]+)",
+      "comment": "Negative lookbehind (?<![/\\d]) prevents matching 5-digit sequences that appear inside phone numbers (e.g., 0561/93769 Kassel) or other digit sequences.",
       "groups": {
         "1": "POSTAL_CODE",
         "2": "CITY"
       }
     },
     "postal_code_standalone": {
-      "pattern": "(?:PLZ:?\\s*)?(\\d{5})(?!\\d)",
-      "type": "POSTAL_CODE"
+      "pattern": "(?<![/\\d])(?:PLZ:?\\s*)?(\\d{5})(?!\\d)",
+      "type": "POSTAL_CODE",
+      "comment": "Negative lookbehind (?<![/\\d]) prevents matching inside phone numbers or larger digit sequences."
     },
     "city_facility_simple": {
       "pattern": "\\b([A-ZÄÖÜ][a-zäöüß]+er)\\s+(Klinikum|Krankenhaus|Klinik|MVZ|Herzzentrum|Tumorzentrum|Lungenzentrum)\\b",
@@ -112,8 +114,8 @@
       }
     },
     "medical_facility_with_city": {
-      "pattern": "\\b([A-ZÄÖÜ][a-zäöüß]+er)\\s+([A-ZÄÖÜ][^.]{0,60}(?:Klinik|Krankenhaus|Hospital|Zentrum|Haus|MVZ)(?:[^.]{0,30})?)",
-      "comment": "Generische Einrichtung mit Stadt-Adjektiv: 'Hamburger Herzzentrum', 'Göttinger Haus'",
+      "pattern": "\\b([A-ZÄÖÜ][a-zäöüß]+er)\\s+((?:[A-ZÄÖÜ][a-zäöüß-]*\\s+){0,3}[A-ZÄÖÜ]?[a-zäöüß-]*(?:Klinikum|Klinik|Krankenhaus|Hospital|Zentrum|MVZ)\\b(?:\\s+(?-i:[A-ZÄÖÜ])[a-zäöüß-]+)?)",
+      "comment": "City-adjective + facility: max 5 words total, explicit facility keywords required (Klinikum, Klinik, Krankenhaus, Hospital, Zentrum, MVZ). Replaces unbounded [^.]{0,60} to prevent over-matching. (?-i:[A-ZÄÖÜ]) prevents lowercase words being matched as optional trailing city name.",
       "groups": {
         "1": "CITY_ADJECTIVE",
         "2": "FACILITY_FULL_NAME"
@@ -121,9 +123,9 @@
       "type": "MEDICAL_FACILITY"
     },
     "phone_landline": {
-      "pattern": "(?:(?:Tel\\.?:|Telefon:|Nummer:)\\s+|(?:(?:\\+49|0)\\s?)(?:\\(0\\))?\\s*)\\d{2,5}[\\s\\-\\/]\\d{3,9}(?:[\\s\\-]\\d{2,4})?",
+      "pattern": "(?:(?:Tel\\.?:|Telefon:|Nummer:)\\s+|(?:(?:\\+49|0)\\s?)(?:\\(0\\))?\\s*)\\d{2,5}[\\s\\-\\/]\\d{3,9}(?:[\\s\\-]\\d{2,4})?\\b",
       "type": "PHONE",
-      "comment": "Festnetz: requires EITHER explicit prefix (Tel:, Telefon:, Nummer:) OR international/national prefix (+49, 0). Prevents matching number-like sequences in plain medical text."
+      "comment": "Festnetz: requires EITHER explicit prefix (Tel:, Telefon:, Nummer:) OR international/national prefix (+49, 0). Trailing \\b prevents partial matches inside longer digit sequences."
     },
     "phone_mobile": {
       "pattern": "(?:Mobil:|Handy:)?\\s*(?:\\+49\\s?)?(0?1[5-7][0-9])[\\s\\-\\/]?(\\d{7,8})",
@@ -141,9 +143,9 @@
       "comment": "E-Mail: max@klinikum.de"
     },
     "fax": {
-      "pattern": "(?:Fax:|Telefax:|Fax-Nr\\.?:?)\\s+(?:\\+49\\s?)?(?:\\(0\\))?\\s*\\d{2,5}[\\s\\-\\/]\\d{3,9}",
+      "pattern": "(?:Fax:|Telefax:|Fax-Nr\\.?:?)\\s+(?:\\+49\\s?)?(?:\\(0\\))?\\s*\\d{2,5}[\\s\\-\\/]\\d{3,9}\\b",
       "type": "FAX",
-      "comment": "Fax: MUST have explicit prefix (Fax:, Telefax:, Fax-Nr.:) followed by whitespace"
+      "comment": "Fax: MUST have explicit prefix (Fax:, Telefax:, Fax-Nr.:) followed by whitespace. Trailing \\b prevents partial digit matches."
     },
     "hk_number": {
       "pattern": "HK-?Nr\\.?:?\\s*([0-9]{4}\\/[0-9]{2})",
@@ -156,12 +158,12 @@
       "comment": "Pacemaker/ICD serial numbers: DR 268880, VR 123456, ICD 987654, CRT 456789"
     },
     "medical_facility": {
-      "pattern": "(?:Ambulante[sn]?\\s+)?(Herzzentrum|Tumorzentrum|Lungenzentrum|Ambulanzzentrum|Rehabilitationszentrum|Reha-?Zentrum|Rehaklinik|Klinik(?: und Rehabilitationszentrum)?)\\s+((?:Bad\\s+)?[A-ZÄÖÜ][a-zäöüß]+(?:\\s+(?:am|an|der|im|in|ob)\\s+[A-ZÄÖÜ][a-zäöüß]+)?)",
+      "pattern": "(?:Ambulante[sn]?\\s+)?(Herzzentrum|Tumorzentrum|Lungenzentrum|Ambulanzzentrum|Rehabilitationszentrum|Reha-?Zentrum|Rehaklinik|Klinik(?: und Rehabilitationszentrum)?)\\s+((?:Bad\\s+)?(?!(?:f[üu]r|und|oder|am|an|im|in|ob|zu|bei|vom|von|der|des|die|das)\\b)[A-ZÄÖÜ][a-zäöüß]{2,}(?:\\s+(?:am|an|der|im|in|ob)\\s+[A-ZÄÖÜ][a-zäöüß]+)?)",
       "groups": {
         "1": "FACILITY_TYPE",
         "2": "CITY"
       },
-      "comment": "Matches medical facilities with city names: 'Ambulantes Herzzentrum Kassel', 'Klinik und Rehabilitationszentrum Lippoldsberg'"
+      "comment": "Medical facility + city: requires city token ≥3 letters (uppercase + 2+ lowercase via {2,}) and excludes short prepositions/articles (für, und, am, an, im, in, ob, zu, bei, vom, von, der, des, die, das) from being matched as the city name. Note: the inner (?:am|an|der|im|in|ob) allows compound city names like 'Frankfurt am Main' and serves a different purpose than the leading negative lookahead exclusion list."
     }
   },
   

@@ -216,6 +216,212 @@ class TestFullClinicalNoteExcerpt:
         )
 
 
+
+# ---------------------------------------------------------------------------
+# New tests for PR #22 regex tightening fixes
+# ---------------------------------------------------------------------------
+
+class TestPostalCodeLookbehindFix:
+    """Postal-code patterns must not match 5-digit sequences that appear inside
+    phone numbers (preceded by '/' or another digit)."""
+
+    @pytest.fixture(autouse=True)
+    def extractor(self):
+        self._extractor = _load_extractor()
+
+    def test_postal_code_not_extracted_after_slash(self):
+        """5 digits after '/' in a phone number must NOT be matched as postal code."""
+        text = "Tel: 0561/93769 Kassel"
+        matched = _redacted_texts(self._extractor, text)
+        assert "93769" not in matched, (
+            f"False positive: '93769' after '/' extracted as postal code.\n"
+            f"All matches: {matched}"
+        )
+
+    def test_real_postal_code_still_extracted(self):
+        """A genuine standalone postal code+city must still be extracted."""
+        text = "37075 Göttingen"
+        matched = _redacted_texts(self._extractor, text)
+        assert "37075" in matched or "Göttingen" in matched, (
+            f"True positive missed: expected postal code or city in '{text}'.\n"
+            f"All matches: {matched}"
+        )
+
+    def test_postal_code_in_address_still_extracted(self):
+        """Postal code inside an address block must still be extracted."""
+        text = "Meierweg 123, 34117 Kassel"
+        matched = _redacted_texts(self._extractor, text)
+        assert "34117" in matched or "Kassel" in matched, (
+            f"True positive missed: postal code/city in address not found.\n"
+            f"All matches: {matched}"
+        )
+
+    def test_phone_digits_not_postal_code(self):
+        """Digits inside a multi-segment phone number must not leak as postal code."""
+        # "0561/937690" contains "93769" as a 5-digit substring after the slash.
+        # With (?<![/\d]) lookbehind, "93769" preceded by "/" must not match.
+        text = "Rückfragen unter 0561/937690."
+        matched = _redacted_texts(self._extractor, text)
+        assert "93769" not in matched, (
+            f"False positive: phone digit segment extracted as postal code.\n"
+            f"All matches: {matched}"
+        )
+
+
+class TestDoctorNameTighteningFix:
+    """Doctor-name pattern must handle combined titles and stop at lowercase words."""
+
+    @pytest.fixture(autouse=True)
+    def extractor(self):
+        self._extractor = _load_extractor()
+
+    def test_pd_dr_combined_title_matched(self):
+        """'PD Dr. Jensen' must be matched as a single DOCTOR_NAME entity."""
+        from src.pii_extractor import StructuredPIIExtractor
+        text = "PD Dr. Jensen übernahm die weitere kardiologische Betreuung."
+        entities = self._extractor.extract_pii(text)
+        doctor_names = [e.text for e in entities if e.entity_type == "DOCTOR_NAME"]
+        assert any("Jensen" in n for n in doctor_names), (
+            f"True positive missed: 'PD Dr. Jensen' not found as DOCTOR_NAME.\n"
+            f"DOCTOR_NAME entities: {doctor_names}"
+        )
+
+    def test_doctor_name_stops_before_lowercase_continuation(self):
+        """Doctor name must not consume lowercase words that follow it."""
+        text = "Dr. Jensen übernahm die weitere kardiologische Betreuung."
+        entities = self._extractor.extract_pii(text)
+        doctor_names = [e.text for e in entities if e.entity_type == "DOCTOR_NAME"]
+        # Must not match the whole sentence fragment beyond the name
+        for name in doctor_names:
+            assert "übernahm" not in name, (
+                f"Over-match: 'übernahm' included in DOCTOR_NAME '{name}'."
+            )
+            assert "kardiologische" not in name, (
+                f"Over-match: 'kardiologische' included in DOCTOR_NAME '{name}'."
+            )
+
+    def test_prof_dr_med_matched(self):
+        """'Prof. Dr. med. Müller' must be matched."""
+        text = "Prof. Dr. med. Müller wurde als Konsiliarius hinzugezogen."
+        entities = self._extractor.extract_pii(text)
+        doctor_names = [e.text for e in entities if e.entity_type == "DOCTOR_NAME"]
+        assert any("Müller" in n for n in doctor_names), (
+            f"True positive missed: 'Prof. Dr. med. Müller' not found.\n"
+            f"DOCTOR_NAME entities: {doctor_names}"
+        )
+
+    def test_doctor_name_max_three_parts(self):
+        """Doctor name should capture at most 3 name parts after the title."""
+        # 4-word sequence after title - pattern should stop at max 3 parts.
+        # Combined title 'Dr.' = 1 token; up to 3 name tokens → ≤4 tokens total.
+        text = "Dr. Max Ernst Schulze Braun wurde informiert."
+        entities = self._extractor.extract_pii(text)
+        doctor_names = [e.text for e in entities if e.entity_type == "DOCTOR_NAME"]
+        for name in doctor_names:
+            words = name.split()
+            # title (1 token: 'Dr.') + up to 3 name parts = max 4 tokens
+            assert len(words) <= 4, (
+                f"Over-match: doctor name '{name}' has {len(words)} tokens (expected ≤4)."
+            )
+
+
+class TestMedicalFacilityPrepositionFix:
+    """medical_facility pattern must not capture prepositions/articles as the city name."""
+
+    @pytest.fixture(autouse=True)
+    def extractor(self):
+        self._extractor = _load_extractor()
+
+    def test_preposition_not_matched_as_city(self):
+        """'Herzzentrum für Kardiologie' must not yield 'für' as the city."""
+        text = "Herzzentrum für Kardiologie"
+        entities = self._extractor.extract_pii(text)
+        city_texts = [e.text for e in entities if e.entity_type in ("CITY", "FACILITY_TYPE")]
+        assert "für" not in city_texts, (
+            f"False positive: 'für' matched as city in '{text}'.\n"
+            f"All entities: {[(e.text, e.entity_type) for e in entities]}"
+        )
+
+    def test_preposition_in_not_matched_as_city(self):
+        """'Rehaklinik in Kassel' must not yield 'in' as the city (only 'Kassel')."""
+        text = "Rehaklinik in Kassel"
+        entities = self._extractor.extract_pii(text)
+        city_texts = [e.text for e in entities]
+        assert "in" not in city_texts, (
+            f"False positive: 'in' matched as city in '{text}'.\n"
+            f"All entities: {[(e.text, e.entity_type) for e in entities]}"
+        )
+
+    def test_real_city_after_facility_still_matched(self):
+        """'Ambulantes Herzzentrum Kassel' must still yield Kassel as city."""
+        text = "Ambulantes Herzzentrum Kassel"
+        entities = self._extractor.extract_pii(text)
+        texts = [e.text for e in entities]
+        assert "Kassel" in texts or "Herzzentrum" in texts, (
+            f"True positive missed: facility+city not found.\n"
+            f"All entities: {[(e.text, e.entity_type) for e in entities]}"
+        )
+
+    def test_facility_bad_city_matched(self):
+        """'Herzzentrum Bad Nauheim' (compound city) must still be recognised."""
+        text = "Herzzentrum Bad Nauheim"
+        entities = self._extractor.extract_pii(text)
+        texts = [e.text for e in entities]
+        assert "Bad Nauheim" in texts or "Herzzentrum" in texts, (
+            f"True positive missed: 'Herzzentrum Bad Nauheim' not found.\n"
+            f"All entities: {[(e.text, e.entity_type) for e in entities]}"
+        )
+
+
+class TestPhoneWordBoundaryFix:
+    """Phone and fax patterns must not match inside longer digit sequences
+    or produce partial matches in lab-row number strings."""
+
+    @pytest.fixture(autouse=True)
+    def extractor(self):
+        self._extractor = _load_extractor()
+
+    def test_lab_reference_range_not_phone(self):
+        """Lab reference ranges like '135-145' must not be matched as phones."""
+        text = "Natrium 138 mmol/L (135-145) Kalium 4.2 mmol/L (3.5-5.0)"
+        entities = self._extractor.extract_pii(text)
+        phones = [e for e in entities if e.entity_type in ("PHONE", "PHONE_MOBILE", "FAX")]
+        assert len(phones) == 0, (
+            f"False positive: lab reference range matched as phone: "
+            f"{[(e.text, e.entity_type) for e in phones]}"
+        )
+
+    def test_measurement_values_not_phone(self):
+        """Measurement values with slashes (e.g. '4/6') must not match as phones."""
+        text = "CRP 4.5 mg/L Leukozyten 7200 /µL Thrombozyten 180000 /µL"
+        entities = self._extractor.extract_pii(text)
+        phones = [e for e in entities if e.entity_type in ("PHONE", "PHONE_MOBILE", "FAX")]
+        assert len(phones) == 0, (
+            f"False positive: measurement matched as phone: "
+            f"{[(e.text, e.entity_type) for e in phones]}"
+        )
+
+    def test_real_phone_with_prefix_still_matched(self):
+        """An explicit 'Tel.: XXXX' phone number must still be extracted."""
+        text = "Rückfragen: Tel.: 0561/9376-0"
+        entities = self._extractor.extract_pii(text)
+        phones = [e for e in entities if e.entity_type in ("PHONE", "PHONE_MOBILE")]
+        assert len(phones) >= 1, (
+            f"True positive missed: phone number not found in '{text}'.\n"
+            f"All entities: {[(e.text, e.entity_type) for e in entities]}"
+        )
+
+    def test_fax_with_explicit_prefix_matched(self):
+        """A 'Fax: XXXX' number must still be extracted."""
+        text = "Fax: 0561/9376-99"
+        entities = self._extractor.extract_pii(text)
+        faxes = [e for e in entities if e.entity_type == "FAX"]
+        assert len(faxes) >= 1, (
+            f"True positive missed: fax number not found in '{text}'.\n"
+            f"All entities: {[(e.text, e.entity_type) for e in entities]}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Standalone execution for quick manual debugging
 # ---------------------------------------------------------------------------
