@@ -1,7 +1,6 @@
 {
   "template_name": "German-Clinical-Structured-v2",
   "version": "2.2.0",
-  
   "zones": {
     "header_page_1": {
       "page": 1,
@@ -28,7 +27,6 @@
       "redaction": "full"
     }
   },
-  
   "structured_patterns": {
     "patient_block": {
       "pattern": "^(Herr|Frau)\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
@@ -50,9 +48,9 @@
       "type": "ADDRESS"
     },
     "doctor_name": {
-      "pattern": "((?:PD\\s+Dr\\.|Prof\\.\\s+Dr\\.|Dr\\.|Prof\\.|PD)\\s+(?:med\\.\\s+)?(?:(?-i:[A-ZÄÖÜ])[a-zäöüß-]+\\s+){0,2}(?-i:[A-ZÄÖÜ])[a-zäöüß-]+)",
+      "pattern": "\\b((?:Prof\\.(?:\\s+Dr\\.(?:\\s+Dr\\.)?)?|PD(?:\\s+Dr\\.)?|Dr\\.)(?:\\s+med\\.)?(?:\\s+(?-i:[A-ZÄÖÜ])[a-zäöüß]{2,}(?:-(?-i:[A-ZÄÖÜ])[a-zäöüß]{2,})*){0,2}\\s+(?:(?:el|al|de|da|van|von)\\s+)?(?-i:[A-ZÄÖÜ])[a-zäöüß]{2,}(?:-(?-i:[A-ZÄÖÜ])[a-zäöüß]{2,})*)\\b",
       "type": "DOCTOR_NAME",
-      "comment": "Non-greedy: handles combined titles (PD Dr., Prof. Dr.), max 3 name parts; (?-i:[A-ZÄÖÜ]) is intentionally repeated for each name-part position to force uppercase-only matching in those sub-patterns even under the outer IGNORECASE flag, preventing lowercase verbs/adjectives from being consumed as additional name tokens."
+      "comment": "Hardened pattern: \\b boundaries, title prefix (Prof./Prof. Dr./Prof. Dr. Dr./PD/PD Dr./Dr.), optional med., 0-2 given names (>=3 chars each, hyphen-connected parts also >=3 chars), last-name block with optional known prefixes (El/Al/De/Da/Van/Von) followed by >=3 char token; (?-i:[A-ZÄÖÜ]) forces uppercase matching in name positions even under outer IGNORECASE flag."
     },
     "doctor_with_location": {
       "pattern": "Dr\\.\\s+([A-ZÄÖÜ][a-zäöüß-]+)(?:,\\s+([A-Z]{2,})\\s+([A-ZÄÖÜ][a-zäöüß]+))?",
@@ -69,9 +67,9 @@
       "comment": "Matches doctor names enclosed in parentheses: (PD Dr. Christoph Jensen)"
     },
     "salutation_with_name": {
-      "pattern": "(?:Herr|Frau)\\s+(?!(?:Kollege|Kollegin)\\b)([A-ZÄÖÜ][a-zäöüß-]{2,})",
+      "pattern": "\\b(?:Herr|Frau)\\s+(?!(?:Kollege|Kollegin)\\b)((?:(?:el|al|de|da|van|von)\\s+)?(?-i:[A-ZÄÖÜ])[a-zäöüß]{2,}(?:-(?-i:[A-ZÄÖÜ])[a-zäöüß]{2,})*)\\b",
       "type": "PERSON_NAME",
-      "comment": "Matches 'Herr Jensen', 'Frau Meier' (excludes 'Herr Kollege' / 'Frau Kollegin')"
+      "comment": "Hardened pattern: \\b boundaries, (?-i:[A-ZÄÖÜ]) enforces uppercase start even under IGNORECASE, min 3-char name tokens, optional known name prefixes (El/Al/De/Da/Van/Von), hyphen-connected last-name parts each >=3 chars; excludes generic salutations Kollege/Kollegin."
     },
     "doctor_signature": {
       "context_trigger": "Mit freundlichen Grüßen",
@@ -166,41 +164,56 @@
       "comment": "Medical facility + city: requires city token ≥3 letters (uppercase + 2+ lowercase via {2,}) and excludes short prepositions/articles (für, und, am, an, im, in, ob, zu, bei, vom, von, der, des, die, das) from being matched as the city name. Note: the inner (?:am|an|der|im|in|ob) allows compound city names like 'Frankfurt am Main' and serves a different purpose than the leading negative lookahead exclusion list."
     }
   },
-  
   "location_anonymization": {
     "enabled": true,
     "city_database": "data/cities_de.txt",
     "facilities_database": "data/medical_facilities_de.json",
-    
     "context_triggers": {
-      "prepositions": ["in", "aus", "nach", "von", "bei"],
-      "facility_keywords": [
-        "Universitätsklinikum", "Uniklinik", "Klinikum", "Krankenhaus",
-        "Herzzentrum", "Tumorzentrum", "Lungenzentrum", "MVZ", "Charité",
-        "Medizinisches Versorgungszentrum",
-        "Ambulanzzentrum", "Rehabilitationszentrum", "Reha-Zentrum", "Rehaklinik"
+      "prepositions": [
+        "in",
+        "aus",
+        "nach",
+        "von",
+        "bei"
       ],
-      "referral_keywords": ["überwiesen", "Zuweiser", "eingewiesen", "verlegt"]
+      "facility_keywords": [
+        "Universitätsklinikum",
+        "Uniklinik",
+        "Klinikum",
+        "Krankenhaus",
+        "Herzzentrum",
+        "Tumorzentrum",
+        "Lungenzentrum",
+        "MVZ",
+        "Charité",
+        "Medizinisches Versorgungszentrum",
+        "Ambulanzzentrum",
+        "Rehabilitationszentrum",
+        "Reha-Zentrum",
+        "Rehaklinik"
+      ],
+      "referral_keywords": [
+        "überwiesen",
+        "Zuweiser",
+        "eingewiesen",
+        "verlegt"
+      ]
     },
-    
     "location_blacklist": [
       "UKE",
       "Charité",
       "Northeim",
       "Eppendorf"
     ],
-    
     "replacement": "[ORT]",
     "facility_replacement": "[KLINIK]"
   },
-  
   "date_handling": {
     "birthdate": {
       "pattern": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
       "action": "remove"
     }
   },
-  
   "pii_mechanisms": {
     "PATIENT_NAME": "redact",
     "PERSON_NAME": "redact",
@@ -227,19 +240,15 @@
     "HK_NUMBER": "redact",
     "DEVICE_ID": "redact"
   },
-  
   "image_pii_patterns": {
     "case_number": "\\d{6,10}",
     "name": "^[A-ZÄÖÜ][a-zäöüß]+\\s+[A-ZÄÖÜ][a-zäöüß]+$",
     "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}"
   },
-  
   "info": "Template für deutsche medizinische Arztbriefe mit kontextbasierter Orts-/Einrichtungserkennung und deutschen Monats-Namen.",
-
   "cut_after_keyword": {
     "enabled": true,
     "trigger": "HÄMOSTASEOLOGIE Roche",
     "redact_all_following_pages": true
   }
 }
-

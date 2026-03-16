@@ -33,6 +33,15 @@ PATTERNS_REQUIRING_WORD_BOUNDARY = {
     "email",
 }
 
+# Patterns for which a post-match filter is applied: if every whitespace-
+# separated token in the extracted entity text is shorter than 3 characters
+# the match is discarded as a likely false positive (e.g. "Dr. El" with only
+# the short prefix captured, or stray abbreviations).
+PATTERNS_REQUIRING_TOKEN_LENGTH_FILTER = {
+    "doctor_name",
+    "salutation_with_name",
+}
+
 
 class StructuredPIIExtractor:
     """Extracts PII using structured, context-based regex patterns.
@@ -74,6 +83,36 @@ class StructuredPIIExtractor:
             True if word boundary check is required
         """
         return pattern_name in PATTERNS_REQUIRING_WORD_BOUNDARY
+
+    def _requires_token_length_filter(self, pattern_name: str) -> bool:
+        """Determine if a pattern requires the token-length post-match filter.
+
+        Args:
+            pattern_name: Name of the pattern
+
+        Returns:
+            True if the token-length filter should be applied
+        """
+        return pattern_name in PATTERNS_REQUIRING_TOKEN_LENGTH_FILTER
+
+    def _all_tokens_short(self, entity_text: str, min_length: int = 3) -> bool:
+        """Return True when every whitespace-separated token is shorter than *min_length*.
+
+        Used as a post-match guard: if every token in the extracted text is
+        very short (e.g. only abbreviations or prefixes were captured) the
+        match is likely a false positive and should be discarded.
+
+        Args:
+            entity_text: The extracted entity text to inspect.
+            min_length: Minimum token length threshold (default: 3).
+
+        Returns:
+            True if ALL tokens are shorter than min_length, False otherwise.
+        """
+        tokens = entity_text.split()
+        if not tokens:
+            return True
+        return all(len(t) < min_length for t in tokens)
 
     def _is_whole_word(self, text: str, match_start: int, match_end: int) -> bool:
         """
@@ -230,6 +269,16 @@ class StructuredPIIExtractor:
                         f"Reason: Not a whole word (substring match)"
                     )
                     continue
+
+            # Apply token-length filter for patterns that require it
+            if self._requires_token_length_filter(pattern_name):
+                if self._all_tokens_short(entity_text):
+                    logger.debug(
+                        f"[SKIP - TOKEN LENGTH] Pattern: {pattern_name} | "
+                        f"Text: '{entity_text}' | "
+                        f"Reason: All tokens shorter than 3 characters"
+                    )
+                    continue
             
             # Check whitelist
             if self._is_whitelisted(entity_text):
@@ -300,6 +349,16 @@ class StructuredPIIExtractor:
                                     f"[SKIP - BOUNDARY] Pattern: {pattern_name} (group {group_num}) | "
                                     f"Text: '{entity_text}' | "
                                     f"Reason: Not a whole word (substring match)"
+                                )
+                                continue
+
+                        # Apply token-length filter for patterns that require it
+                        if self._requires_token_length_filter(pattern_name):
+                            if self._all_tokens_short(entity_text):
+                                logger.debug(
+                                    f"[SKIP - TOKEN LENGTH] Pattern: {pattern_name} (group {group_num}) | "
+                                    f"Text: '{entity_text}' | "
+                                    f"Reason: All tokens shorter than 3 characters"
                                 )
                                 continue
                         
