@@ -24,6 +24,7 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.main import anonymize_pdf
+from src.excel_exporter import export_to_excel, extract_text_from_pdf
 from config.template_manager import (
     list_templates,
     load_template,
@@ -540,6 +541,32 @@ if 'results' in st.session_state and st.session_state['results']:
         data=zip_buffer.getvalue(),
         file_name="anonymized_batch.zip",
         mime="application/zip"
+    )
+
+    # Excel download: extract anonymized text from each PDF and bundle into XLSX
+    st.subheader("📊 Anonymisierte Texte als Excel herunterladen")
+    excel_results = []
+    for result in st.session_state['results']:
+        try:
+            anon_text = extract_text_from_pdf(result['anonymized_pdf'])
+        except Exception as exc:
+            logger.warning(
+                "Excel export: failed to extract text from '%s': %s",
+                result['anonymized_pdf'],
+                exc,
+            )
+            anon_text = ""
+        excel_results.append({
+            "document": result['original_name'],
+            "text": anon_text,
+        })
+    excel_buffer = io.BytesIO()
+    export_to_excel(excel_results, excel_buffer)
+    st.download_button(
+        label="📊 Anonymisierte Texte (Excel)",
+        data=excel_buffer.getvalue(),
+        file_name="anonymized_texts.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
     # ── Debug summary (shown when debug mode is active) ───────────────────────

@@ -95,6 +95,7 @@ streamlit run app.py
 - ✅ **Batch-Verarbeitung** mit Live-Progress
 - ✅ **Einzeldownload** jeder anonymisierten Datei
 - ✅ **ZIP-Download** aller Dateien auf einmal
+- ✅ **Excel-Download** – Anonymisierten Text aller Dokumente als `.xlsx` exportieren (Spalten: *Dokument*, *Text*)
 - ✅ **Statistiken** (Anzahl gefundener PII pro Datei)
 
 ### 📝 Template Editor
