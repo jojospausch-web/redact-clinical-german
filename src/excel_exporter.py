@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import fitz  # PyMuPDF
 import openpyxl
-from pathlib import Path
-from typing import List, Union
 import io
 
 
@@ -25,8 +23,8 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 
 def export_to_excel(
-    results: List[dict],
-    output_path: Union[str, io.BytesIO],
+    results: list[dict],
+    output_path: str | io.BytesIO,
 ) -> None:
     """Write anonymized document results to an Excel (.xlsx) file.
 
