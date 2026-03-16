@@ -16,6 +16,11 @@ import pytest
 
 from src.zone_anonymizer import ZoneBasedAnonymizer
 from src.config import AnonymizationTemplate
+from config.template_manager import (
+    save_template,
+    load_template,
+    DEFAULT_TEMPLATE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -225,3 +230,54 @@ class TestBlacklistConfig:
             "german_clinical_default.json must contain a 'blacklist_exact' key"
         )
         assert isinstance(data["blacklist_exact"], list)
+
+
+# ---------------------------------------------------------------------------
+# Template-manager roundtrip tests
+# ---------------------------------------------------------------------------
+
+class TestBlacklistTemplateManagerRoundtrip:
+    """Verify that blacklist_exact survives save/load via template_manager."""
+
+    def test_save_and_load_retains_blacklist(self, tmp_path, monkeypatch):
+        """Saving a template with blacklist_exact and loading it back preserves entries."""
+        # Redirect the template directory to a temp folder
+        monkeypatch.setattr(
+            "config.template_manager.TEMPLATES_DIR", tmp_path
+        )
+
+        entries = ["UMG", "Universitätsmedizin Göttingen", "Charité"]
+        template_dict = {
+            "name": "roundtrip_test",
+            "zones": {},
+            "whitelist": {"medical": [], "anatomical": [], "devices": []},
+            "blacklist_exact": entries,
+        }
+
+        assert save_template("roundtrip_test", template_dict)
+        loaded = load_template("roundtrip_test")
+        assert loaded is not None
+        assert loaded.get("blacklist_exact") == entries
+
+    def test_default_template_constant_has_blacklist_exact(self):
+        """The DEFAULT_TEMPLATE constant must include an empty blacklist_exact list."""
+        assert "blacklist_exact" in DEFAULT_TEMPLATE
+        assert isinstance(DEFAULT_TEMPLATE["blacklist_exact"], list)
+
+    def test_fill_defaults_preserves_blacklist(self, tmp_path, monkeypatch):
+        """_fill_defaults must retain a non-empty blacklist_exact from stored data."""
+        monkeypatch.setattr(
+            "config.template_manager.TEMPLATES_DIR", tmp_path
+        )
+
+        # Save template without blacklist (simulates an older template)
+        template_no_bl = {
+            "name": "no_blacklist",
+            "zones": {},
+            "whitelist": {"medical": [], "anatomical": [], "devices": []},
+        }
+        save_template("no_blacklist", template_no_bl)
+        loaded = load_template("no_blacklist")
+        # Should default to empty list
+        assert loaded is not None
+        assert loaded.get("blacklist_exact") == []

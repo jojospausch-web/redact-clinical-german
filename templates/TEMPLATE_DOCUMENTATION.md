@@ -146,6 +146,25 @@ Definiert, wie mit verschiedenen PII-Typen umgegangen wird:
 }
 ```
 
+### Blacklist (blacklist_exact)
+
+Exakte, case-sensitive Wörter oder Phrasen, die **immer** geschwärzt werden – unabhängig von Whitelist und anderen Pattern-Einstellungen.
+
+```json
+"blacklist_exact": [
+  "UMG",
+  "Universitätsmedizin Göttingen"
+]
+```
+
+**Eigenschaften:**
+- **Case-sensitiv:** `"UMG"` matcht nur `UMG`, nicht `umg` oder `Umg`.
+- **Wortgrenzen:** `"UMG"` matcht `UMG` als eigenständiges Wort, aber nicht `Umgeben`.
+- **Mehrwort-Phrasen:** `"Universitätsmedizin Göttingen"` wird als Ganzes gematcht; interne Leerzeichen müssen exakt übereinstimmen.
+- **Standard:** leere Liste (`[]`), d.h. keine Einträge werden erzwungen geschwärzt.
+
+Im **Template Editor** unter dem Tab *🚫 Blacklist (exakt)* kann die Liste komfortabel bearbeitet werden (ein Eintrag pro Zeile).
+
 ### Bild-PII-Patterns (image_pii_patterns)
 
 Patterns für OCR-Texterkennung in Bildern:

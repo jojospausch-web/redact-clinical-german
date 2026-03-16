@@ -106,7 +106,8 @@ Open the **Template Editor** page in the Streamlit sidebar to create and manage 
 1. **Neues Template** – Click *🆕 Neu* to start with default values
 2. **Zonen konfigurieren** – Set pixel heights for header, footer, signature, and `Personal:` block
 3. **Whitelist bearbeiten** – Enter medical / anatomical / device terms that must not be redacted
-4. **Speichern** – Enter a name and click *💾 Template speichern*
+4. **Blacklist bearbeiten** – Enter exact, case-sensitive terms/phrases (one per line) that are always redacted (e.g. `UMG` → redacted; `Umgeben` → preserved)
+5. **Speichern** – Enter a name and click *💾 Template speichern*
 
 Templates are saved as JSON files in the `templates/` directory and are immediately available in the main anonymization page.
 
@@ -127,7 +128,8 @@ Templates are saved as JSON files in the `templates/` directory and are immediat
     "medical": ["CT", "MRT", "Angiographie"],
     "anatomical": ["Herz", "Lunge", "Leber"],
     "devices": ["Stent", "Katheter", "Defibrillator"]
-  }
+  },
+  "blacklist_exact": ["UMG", "Universitätsmedizin Göttingen"]
 }
 ```
 
@@ -141,6 +143,7 @@ Templates are saved as JSON files in the `templates/` directory and are immediat
 | `whitelist.medical` | Medical terms excluded from redaction |
 | `whitelist.anatomical` | Anatomical terms excluded from redaction |
 | `whitelist.devices` | Device / manufacturer names excluded from redaction |
+| `blacklist_exact` | Case-sensitive exact-match terms/phrases always redacted (whole-word match, no partial matches) |
 
 ### Command Line Interface (CLI)
 

@@ -57,7 +57,8 @@ DEFAULT_TEMPLATE: dict = {
         "medical": [],
         "anatomical": [],
         "devices": []
-    }
+    },
+    "blacklist_exact": []
 }
 
 # Name of the default template file (created automatically on first use)

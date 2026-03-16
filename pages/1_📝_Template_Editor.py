@@ -49,6 +49,16 @@ def _join_list(items) -> str:
     return ", ".join(items) if items else ""
 
 
+def _parse_lines(text: str):
+    """Split newline-separated text into a stripped list of non-empty strings."""
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _join_lines(items) -> str:
+    """Join a list of strings into newline-separated text."""
+    return "\n".join(items) if items else ""
+
+
 # ── Template management section ───────────────────────────────────────────────
 
 st.header("🗂️ Template verwalten")
@@ -111,11 +121,12 @@ st.divider()
 tpl = st.session_state["tpl_data"]
 zones = tpl.get("zones", {})
 whitelist = tpl.get("whitelist", {})
+blacklist_exact = tpl.get("blacklist_exact", [])
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_zones, tab_patterns, tab_whitelist, tab_preview = st.tabs(
-    ["⚙️ Zonen-Konfiguration", "🔍 PII-Pattern Aktivierung", "📋 Whitelist-Begriffe", "🔍 Vorschau"]
+tab_zones, tab_patterns, tab_whitelist, tab_blacklist, tab_preview = st.tabs(
+    ["⚙️ Zonen-Konfiguration", "🔍 PII-Pattern Aktivierung", "📋 Whitelist-Begriffe", "🚫 Blacklist (exakt)", "🔍 Vorschau"]
 )
 
 # ── Tab 1: Zone heights ───────────────────────────────────────────────────────
@@ -390,7 +401,24 @@ with tab_whitelist:
         help="z.B. Stent, Katheter, Defibrillator",
     )
 
-# ── Tab 4: Preview ────────────────────────────────────────────────────────────
+# ── Tab 4: Blacklist ──────────────────────────────────────────────────────────
+
+with tab_blacklist:
+    st.subheader("🚫 Blacklist (exakt, case-sensitiv)")
+    st.markdown(
+        "Geben Sie Begriffe ein, die **immer** anonymisiert werden sollen – "
+        "unabhängig von anderen Einstellungen."
+    )
+
+    bl_exact = st.text_area(
+        "Blacklist (exakt, case-sensitiv)",
+        value=_join_lines(blacklist_exact),
+        height=200,
+        help="ein Eintrag pro Zeile; exakte Schreibweise; Wortgrenzen werden beachtet",
+        key="bl_exact",
+    )
+
+# ── Tab 5: Preview ────────────────────────────────────────────────────────────
 
 with tab_preview:
     st.subheader("🔍 Aktuelle Einstellungen (Live-Vorschau)")
@@ -415,6 +443,7 @@ with tab_preview:
             "anatomical": _parse_list(wl_anatomical),
             "devices": _parse_list(wl_devices),
         },
+        "blacklist_exact": _parse_lines(bl_exact),
     }
     st.json(preview_data)
 
@@ -452,6 +481,7 @@ if st.button("💾 Template speichern", type="primary", use_container_width=True
                 "anatomical": _parse_list(wl_anatomical),
                 "devices": _parse_list(wl_devices),
             },
+            "blacklist_exact": _parse_lines(bl_exact),
         }
         if save_template(save_name, new_tpl):
             st.session_state["tpl_data"] = new_tpl
