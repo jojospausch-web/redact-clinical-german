@@ -405,17 +405,19 @@ class ZoneBasedAnonymizer:
         # maximum amount of non-PII content above it is preserved.
         trigger_y = instances[0].y0
 
-        # Redact everything from the top of the trigger text to the bottom of the page
+        # Redact from 200px above the trigger line (inclusive) to the bottom of
+        # the page so that any lead-in content on the same line band is covered.
+        redact_start_y = max(0, trigger_y - 200)
         redact_rect = fitz.Rect(
             0,
-            trigger_y,
+            redact_start_y,
             page.rect.width,
             page.rect.height
         )
         page.add_redact_annot(redact_rect, fill=(0, 0, 0))
         logging.getLogger(__name__).info(
             f"Cut-off triggered on page {page_num + 1} at y={trigger_y} "
-            f"by keyword '{config.trigger}'"
+            f"(redacting from y={redact_start_y}) by keyword '{config.trigger}'"
         )
 
         return page_num
