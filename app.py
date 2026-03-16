@@ -549,7 +549,12 @@ if 'results' in st.session_state and st.session_state['results']:
     for result in st.session_state['results']:
         try:
             anon_text = extract_text_from_pdf(result['anonymized_pdf'])
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Excel export: failed to extract text from '%s': %s",
+                result['anonymized_pdf'],
+                exc,
+            )
             anon_text = ""
         excel_results.append({
             "document": result['original_name'],

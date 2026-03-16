@@ -248,3 +248,50 @@ class TestTokenLengthFilter:
         # group 1 = "Al" → only token "Al" < 3 chars → all short → discarded
         entities = ext.extract_pii("Dr. Al wurde notiert.")
         assert len(entities) == 0, f"Expected 0 but got {[e.text for e in entities]}"
+
+
+# ---------------------------------------------------------------------------
+# _all_tokens_short unit tests
+# ---------------------------------------------------------------------------
+
+class TestAllTokensShort:
+    """Direct unit tests for StructuredPIIExtractor._all_tokens_short."""
+
+    @pytest.fixture(autouse=True)
+    def extractor(self):
+        self._ext = StructuredPIIExtractor({})
+
+    def test_empty_string_returns_true(self):
+        """Empty string has no tokens – treated as all-short."""
+        assert self._ext._all_tokens_short("") is True
+
+    def test_whitespace_only_returns_true(self):
+        """Whitespace-only string has no tokens – treated as all-short."""
+        assert self._ext._all_tokens_short("   ") is True
+
+    def test_single_short_token_returns_true(self):
+        """A single token shorter than min_length (3) returns True."""
+        assert self._ext._all_tokens_short("Al") is True
+
+    def test_single_long_token_returns_false(self):
+        """A single token of min_length or longer returns False."""
+        assert self._ext._all_tokens_short("Ali") is False
+        assert self._ext._all_tokens_short("Jensen") is False
+
+    def test_all_short_multiple_tokens_returns_true(self):
+        """Multiple tokens all below min_length returns True."""
+        assert self._ext._all_tokens_short("El Al") is True
+
+    def test_mixed_lengths_returns_false(self):
+        """When at least one token is long enough, returns False."""
+        assert self._ext._all_tokens_short("El Barco") is False
+        assert self._ext._all_tokens_short("Dr. Jensen") is False
+
+    def test_custom_min_length(self):
+        """Custom min_length threshold is respected."""
+        assert self._ext._all_tokens_short("Dr.", min_length=4) is True
+        assert self._ext._all_tokens_short("Dr.", min_length=3) is False
+
+    def test_token_exactly_at_min_length_not_short(self):
+        """Token of exactly min_length (3) is NOT considered short."""
+        assert self._ext._all_tokens_short("Dr.") is False
