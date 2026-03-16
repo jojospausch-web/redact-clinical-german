@@ -154,6 +154,27 @@ def _create_pdf_with_text(pages_text: list[str]) -> str:
     return path
 
 
+def _create_pdf_with_positioned_items(pages_items: list[list[tuple]]) -> str:
+    """Create a temporary multi-page PDF with text at explicit y positions.
+
+    Args:
+        pages_items: List of pages; each page is a list of (text, y) tuples.
+
+    Returns the path to the temporary file.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        path = f.name
+
+    doc = fitz.open()
+    for items in pages_items:
+        page = doc.new_page(width=595, height=842)
+        for text, y in items:
+            page.insert_text((50, y), text, fontsize=11)
+    doc.save(path)
+    doc.close()
+    return path
+
+
 class TestCutAfterKeywordIntegration:
     """Integration tests that anonymize real (temporary) PDFs."""
 
@@ -168,9 +189,20 @@ class TestCutAfterKeywordIntegration:
         return ZoneBasedAnonymizer(tmpl)
 
     def test_text_below_trigger_is_redacted(self):
-        """Content on the same page below the trigger keyword must be blacked out."""
-        pdf_path = _create_pdf_with_text([
-            "Anamnese:\nDie Behandlung verlief komplikationslos.\n\nHÄMOSTASEOLOGIE Roche\nTPZ (Quick) 74-120 %"
+        """Content on the same page below the trigger keyword must be blacked out.
+
+        'Anamnese' is placed well above the 200 px window so it should survive;
+        lab content below the trigger must be gone.
+        """
+        # Trigger at y=400 (baseline); redact_start_y ≈ 400 - 7 - 200 = 193.
+        # 'Anamnese' at y=50 is clearly above that and must be preserved.
+        pdf_path = _create_pdf_with_positioned_items([
+            [
+                ("Anamnese:", 50),
+                ("Die Behandlung verlief komplikationslos.", 70),
+                ("HÄMOSTASEOLOGIE Roche", 400),
+                ("TPZ (Quick) 74-120 %", 420),
+            ]
         ])
         try:
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
@@ -183,7 +215,7 @@ class TestCutAfterKeywordIntegration:
                 page_text = out_doc[0].get_text()
                 out_doc.close()
 
-                # Text above trigger should still be present
+                # Text well above the 200 px window should still be present
                 assert "Anamnese" in page_text
                 # Lab table content below trigger should be gone
                 assert "TPZ" not in page_text
@@ -258,6 +290,71 @@ class TestCutAfterKeywordIntegration:
                 out_doc.close()
 
                 assert "Lab data" in page_text
+            finally:
+                Path(out_path).unlink(missing_ok=True)
+        finally:
+            Path(pdf_path).unlink(missing_ok=True)
+
+    def test_content_200px_before_trigger_is_redacted(self):
+        """Content within 200 px above the trigger must also be redacted."""
+        # Trigger at y=400 baseline => y0 ~392.
+        # Content at y=300 baseline => y0 ~292, which is within the 200 px window
+        # (392 - 200 = 192 < 292), so it must be redacted.
+        pdf_path = _create_pdf_with_positioned_items([
+            [
+                ("Safe content", 50),
+                ("NearTriggerContent", 300),
+                ("HAEMOSTASEOLOGIE Roche", 400),
+                ("LabRow", 420),
+            ]
+        ])
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                out_path = f.name
+            try:
+                anonymizer = self._anonymizer_with_cutoff(trigger="HAEMOSTASEOLOGIE Roche")
+                anonymizer.anonymize_pdf(pdf_path, out_path)
+
+                out_doc = fitz.open(out_path)
+                page_text = out_doc[0].get_text()
+                out_doc.close()
+
+                # Content within 200 px window must be gone
+                assert "NearTriggerContent" not in page_text
+                # Content below trigger must also be gone
+                assert "LabRow" not in page_text
+            finally:
+                Path(out_path).unlink(missing_ok=True)
+        finally:
+            Path(pdf_path).unlink(missing_ok=True)
+
+    def test_content_beyond_200px_before_trigger_is_preserved(self):
+        """Content more than 200 px above the trigger must be preserved."""
+        # Trigger at y=400 baseline => y0 ~392.
+        # redact_start_y ~ 192.
+        # Content at y=50 => y0 ~42, well above the redact boundary -> preserved.
+        pdf_path = _create_pdf_with_positioned_items([
+            [
+                ("SafeContent", 50),
+                ("HAEMOSTASEOLOGIE Roche", 400),
+                ("LabRow", 420),
+            ]
+        ])
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                out_path = f.name
+            try:
+                anonymizer = self._anonymizer_with_cutoff(trigger="HAEMOSTASEOLOGIE Roche")
+                anonymizer.anonymize_pdf(pdf_path, out_path)
+
+                out_doc = fitz.open(out_path)
+                page_text = out_doc[0].get_text()
+                out_doc.close()
+
+                # Content more than 200 px above the trigger must survive
+                assert "SafeContent" in page_text
+                # Lab content must be gone
+                assert "LabRow" not in page_text
             finally:
                 Path(out_path).unlink(missing_ok=True)
         finally:
