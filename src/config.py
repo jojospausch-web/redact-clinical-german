@@ -99,6 +99,7 @@ class AnonymizationTemplate(BaseModel):
     active_patterns: Optional[Dict[str, bool]] = None  # Pattern activation map
     header_until_keyword: Optional[Dict[str, Any]] = None  # Header-until-keyword zone config
     cut_after_keyword: Optional[CutAfterKeyword] = None  # Cut-off after trigger keyword
+    blacklist_exact: List[str] = Field(default_factory=list)  # Case-sensitive exact-match blacklist
 
 
 class PIIEntity(BaseModel):

@@ -152,7 +152,8 @@ def create_custom_template(
     whitelist_medical: List[str] = None,
     whitelist_anatomical: List[str] = None,
     whitelist_devices: List[str] = None,
-    header_until_keyword: dict = None
+    header_until_keyword: dict = None,
+    blacklist_exact: List[str] = None
 ) -> dict:
     """Erstellt Template-Dict aus User-Einstellungen mit separaten Zonen für Seite 1 vs. Folgeseiten.
     
@@ -165,6 +166,7 @@ def create_custom_template(
         whitelist_medical: List of medical terms to exclude from redaction
         whitelist_anatomical: List of anatomical terms to exclude from redaction
         whitelist_devices: List of device/product names to exclude from redaction
+        blacklist_exact: Case-sensitive exact-match terms/phrases that are always redacted
         
     Returns:
         Dictionary with template configuration
@@ -254,6 +256,10 @@ def create_custom_template(
     # ======= HEADER-UNTIL-KEYWORD CONFIG =======
     if header_until_keyword is not None:
         template['header_until_keyword'] = header_until_keyword
+
+    # ======= BLACKLIST EXACT CONFIG =======
+    if blacklist_exact is not None:
+        template['blacklist_exact'] = [e for e in blacklist_exact if e.strip()]
 
     return template
 
@@ -360,6 +366,26 @@ if user_tpl is None:
         "whitelist": {"medical": [], "anatomical": [], "devices": []}
     }
 
+# ── Blacklist sidebar section (needs user_tpl, so placed after template load) ─
+
+with st.sidebar:
+    st.divider()
+
+    # ── Blacklist (exact, case-sensitive) ─────────────────────────────────────
+    st.header("🚫 Blacklist (exakt)")
+
+    _bl_default = "\n".join(user_tpl.get("blacklist_exact", []))
+    blacklist_input = st.text_area(
+        "Begriffe/Phrasen (eine pro Zeile)",
+        value=_bl_default,
+        height=120,
+        help=(
+            "Groß-/Kleinschreibung wird beachtet. Ganze Wörter/Phrasen werden geschwärzt.\n"
+            "Beispiel: 'UMG' schwärzt 'UMG', aber nicht 'Umgeben'."
+        )
+    )
+    blacklist_entries = [line.strip() for line in blacklist_input.splitlines() if line.strip()]
+
 # ── File upload ────────────────────────────────────────────────────────────────
 
 uploaded_files = st.file_uploader(
@@ -423,7 +449,8 @@ if uploaded_files:
             whitelist_medical=medical_terms,
             whitelist_anatomical=anatomical_terms,
             whitelist_devices=device_names,
-            header_until_keyword=user_tpl.get("header_until_keyword")
+            header_until_keyword=user_tpl.get("header_until_keyword"),
+            blacklist_exact=blacklist_entries
         )
 
         # Save custom template to temp file

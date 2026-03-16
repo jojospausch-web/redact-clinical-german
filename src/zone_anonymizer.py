@@ -1,5 +1,6 @@
 """Zone-based PDF anonymization using PyMuPDF."""
 
+import re
 import fitz  # PyMuPDF
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -101,6 +102,9 @@ class ZoneBasedAnonymizer:
             
             # 4. Redact PII entities
             self._redact_pii_entities(page, pii_entities, text, stats)
+
+            # 5. Redact exact blacklist entries (case-sensitive, whole-word)
+            self._redact_blacklist_exact(page, text)
             
             # Apply redactions per page
             page.apply_redactions()
@@ -421,3 +425,55 @@ class ZoneBasedAnonymizer:
         )
 
         return page_num
+
+    def _redact_blacklist_exact(self, page: fitz.Page, text: str):
+        """Redact exact case-sensitive blacklist entries with whole-word boundaries.
+
+        Only entries that have a whole-word case-sensitive regex match in *text* are
+        processed; this prevents false positives (e.g. 'UMG' will not redact
+        'Umgeben') and avoids the overhead of scanning word-tokens for every page.
+
+        For multi-word entries the method checks that consecutive PDF word-tokens
+        match every part of the entry (case-sensitive).  Because the page-text
+        regex filter already rejects double-space variants the consecutive-token
+        scan is only reached for genuine exact matches.
+
+        Args:
+            page: PDF page object
+            text: Full extracted text of this page (used for fast regex pre-filter)
+        """
+        blacklist = getattr(self.template, 'blacklist_exact', None) or []
+        if not blacklist:
+            return
+
+        for entry in blacklist:
+            entry = entry.strip()
+            if not entry:
+                continue
+
+            # Pre-filter: require a whole-word case-sensitive match in the text.
+            # This also rejects double-space variants for multi-word phrases.
+            pre_pattern = re.compile(r'\b' + re.escape(entry) + r'\b')
+            if not pre_pattern.search(text):
+                continue
+
+            entry_parts = entry.split()
+            # PDF word list: (x0, y0, x1, y1, word_text, block_no, line_no, word_no)
+            words = page.get_text("words")
+
+            if len(entry_parts) == 1:
+                # Single-word entry: exact case-sensitive match against word tokens
+                for w in words:
+                    if w[4] == entry:
+                        rect = fitz.Rect(w[0] - 1, w[1] - 1, w[2] + 2, w[3] + 1)
+                        page.add_redact_annot(rect, fill=(0, 0, 0))
+            else:
+                # Multi-word entry: find consecutive word-token sequences
+                n = len(entry_parts)
+                for i in range(len(words) - n + 1):
+                    if all(words[i + j][4] == entry_parts[j] for j in range(n)):
+                        x0 = min(words[i + j][0] for j in range(n)) - 1
+                        y0 = min(words[i + j][1] for j in range(n)) - 1
+                        x1 = max(words[i + j][2] for j in range(n)) + 2
+                        y1 = max(words[i + j][3] for j in range(n)) + 1
+                        page.add_redact_annot(fitz.Rect(x0, y0, x1, y1), fill=(0, 0, 0))

@@ -96,6 +96,7 @@ streamlit run app.py
 - ✅ **Einzeldownload** jeder anonymisierten Datei
 - ✅ **ZIP-Download** aller Dateien auf einmal
 - ✅ **Excel-Download** – Anonymisierten Text aller Dokumente als `.xlsx` exportieren (Spalten: *Dokument*, *Text*)
+- ✅ **Blacklist (exakt)** – Sidebar-Textfeld für case-sensitive Wörter/Phrasen, die immer geschwärzt werden (z.B. `UMG` → redaktiert; `Umgeben` → bleibt erhalten)
 - ✅ **Statistiken** (Anzahl gefundener PII pro Datei)
 
 ### 📝 Template Editor

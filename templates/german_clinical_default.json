@@ -245,6 +245,7 @@
     "name": "^[A-ZÄÖÜ][a-zäöüß]+\\s+[A-ZÄÖÜ][a-zäöüß]+$",
     "birthdate": "\\d{2}\\.\\d{2}\\.\\d{4}"
   },
+  "blacklist_exact": [],
   "info": "Template für deutsche medizinische Arztbriefe mit kontextbasierter Orts-/Einrichtungserkennung und deutschen Monats-Namen.",
   "cut_after_keyword": {
     "enabled": true,
