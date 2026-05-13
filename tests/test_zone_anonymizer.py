@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 
 from src.zone_anonymizer import ZoneBasedAnonymizer
-from src.config import AnonymizationTemplate, ZoneConfig, PatternGroup, DateHandlingConfig
+from src.config import AnonymizationTemplate, ZoneConfig, PatternGroup
 
 
 class TestZoneBasedAnonymizer:
@@ -38,13 +38,6 @@ class TestZoneBasedAnonymizer:
                 "case_id": PatternGroup(
                     pattern=r"Pat\.-Nr\.\s*([0-9]{6,10})",
                     type="CASE_ID"
-                )
-            },
-            date_handling={
-                "birthdate": DateHandlingConfig(
-                    pattern=r"\*(\d{2}\.\d{2}\.\d{4})",
-                    action="shift",
-                    shift_days_range=(-30, 30)
                 )
             },
             image_pii_patterns={

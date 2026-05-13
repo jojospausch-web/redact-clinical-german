@@ -13,7 +13,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import AnonymizationTemplate
 from src.zone_anonymizer import ZoneBasedAnonymizer
 from src.image_anonymizer import MedicalImageAnonymizer
-from src.image_extractor import ImageExtractor
 
 # Set up logging
 logging.basicConfig(
@@ -75,17 +74,15 @@ def anonymize_pdf(
     input_path: str,
     template_path: str = "templates/german_clinical_default.json",
     output_path: str = None,
-    shift_days: int = None,
     extract_images: bool = True
 ) -> dict:
     """
     Python API for anonymizing PDFs (used by Streamlit and other integrations).
-    
+
     Args:
         input_path: Path to input PDF file
         template_path: Path to anonymization template JSON
         output_path: Path for output PDF (auto-generated if None)
-        shift_days: Deprecated – date shifting has been removed; parameter kept for API compatibility
         extract_images: Whether to extract and anonymize images
     
     Returns:
@@ -125,24 +122,22 @@ def anonymize_pdf(
     logger.info("Starting PDF anonymization...")
     stats = anonymizer.anonymize_pdf(input_path, output_path, extract_images_path)
     
-    # Anonymize extracted images if requested
-    if extract_images and extract_images_path:
+    # Anonymize the PIL images already produced by ZoneBasedAnonymizer
+    # (no second extraction pass over the PDF).
+    images = stats.pop('extracted_image_objects', [])
+    if extract_images and extract_images_path and images:
         logger.info("Anonymizing extracted images...")
         image_anonymizer = MedicalImageAnonymizer(config.image_pii_patterns)
-        
-        # Process extracted images
-        extractor = ImageExtractor()
-        images = extractor.extract_images(input_path)
-        
+
         anonymized_images_path = Path(extract_images_path) / "anonymized"
         anonymized_images_path.mkdir(parents=True, exist_ok=True)
-        
+
         for page_num, img_index, img in images:
             anonymized_img, redactions = image_anonymizer.anonymize_image(img)
             anonymized_img_path = anonymized_images_path / f"page{page_num}_img{img_index}_anonymized.png"
             anonymized_img.save(anonymized_img_path)
             extracted_images.append(str(anonymized_img_path))
-            
+
             if redactions:
                 logger.debug(f"Redacted {len(redactions)} regions in image {img_index} on page {page_num}")
     
@@ -179,34 +174,27 @@ def anonymize_pdf(
     help='Extract images to separate folder'
 )
 @click.option(
-    '--shift-days',
-    default=None,
-    type=int,
-    help='Days to shift dates (default: random -30 to +30)'
-)
-@click.option(
     '--verbose', '-v',
     is_flag=True,
     help='Enable verbose logging'
 )
-def anonymize(input_pdf, output, template, extract_images, shift_days, verbose):
+def anonymize(input_pdf, output, template, extract_images, verbose):
     """Anonymize German medical doctor letters (Arztbriefe).
-    
+
     This tool uses a zone-based approach with structured PII extraction
     to anonymize clinical documents while preserving medical terminology.
-    
+
     Example:
         redact-clinical input.pdf --output anonymized.pdf
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     try:
         result = anonymize_pdf(
             input_path=input_pdf,
             template_path=template,
             output_path=output,
-            shift_days=shift_days,
             extract_images=extract_images
         )
         

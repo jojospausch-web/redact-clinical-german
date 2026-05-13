@@ -94,30 +94,42 @@ class ZoneBasedAnonymizer:
             if cut_off_page is None:
                 cut_off_page = self._check_cutoff_trigger(page, page_num)
             
-            # 3. Extract and analyze text for structured PII
-            text = page.get_text()
+            # 3. Build a position-aware text from PyMuPDF word tokens.
+            #    Each word carries its pixel bbox; we reconstruct the page
+            #    text (joining same-line words with " ", new lines with "\n")
+            #    and remember the char offset of each word. This lets us map
+            #    PII char offsets back to exact pixel rectangles without
+            #    re-searching the page text (which over-redacts when a name
+            #    appears more than once on the page).
+            words = page.get_text("words")
+            joined_text, word_ranges = self._build_text_with_offsets(words)
+
             active_patterns = getattr(self.template, 'active_patterns', None)
-            pii_entities = self.pii_extractor.extract_pii(text, active_patterns)
+            pii_entities = self.pii_extractor.extract_pii(joined_text, active_patterns)
             stats['pii_entities_found'] += len(pii_entities)
-            
-            # 4. Redact PII entities
-            self._redact_pii_entities(page, pii_entities, text, stats)
+
+            # 4. Redact PII entities at the exact word rectangles
+            self._redact_pii_entities(page, pii_entities, words, word_ranges, joined_text)
 
             # 5. Redact exact blacklist entries (case-sensitive, whole-word)
-            self._redact_blacklist_exact(page, text)
-            
+            self._redact_blacklist_exact(page, joined_text)
+
             # Apply redactions per page
             page.apply_redactions()
         
-        # Extract images if requested
+        # Extract images if requested. We keep the in-memory PIL images so the
+        # caller (main.py) can run image anonymisation on the same objects
+        # instead of reading every image out of the PDF a second time.
+        extracted_images: list = []
         if extract_images_path:
-            images = self.image_extractor.extract_images(pdf_path, extract_images_path)
-            stats['images_extracted'] = len(images)
-        
+            extracted_images = self.image_extractor.extract_images(pdf_path, extract_images_path)
+            stats['images_extracted'] = len(extracted_images)
+            stats['extracted_image_objects'] = extracted_images
+
         # Save anonymized PDF
         doc.save(output_path)
         doc.close()
-        
+
         return stats
     
     def _redact_zones(self, page: fitz.Page, page_num: int, stats: dict):
@@ -328,11 +340,60 @@ class ZoneBasedAnonymizer:
             f"Redacted header on page {page_num}, height={header_height}"
         )
 
+    def _find_trigger_y(self, page: fitz.Page, trigger: str) -> Optional[float]:
+        """Return the topmost y0 where *trigger* appears on the page, or None.
+
+        Robust against PDF whitespace quirks: PyMuPDF's `search_for` matches the
+        raw content stream and fails when the PDF uses non-breaking spaces
+        (\\xa0), narrow no-break spaces (\\u202f), thin spaces (\\u2009) or
+        double spaces between words (very common in clinical headers). When
+        the native search misses, we fall back to a token-based scan via
+        `get_text("words")`, which tokenises on any Unicode whitespace.
+
+        Args:
+            page: PDF page
+            trigger: Trigger phrase to locate
+
+        Returns:
+            Smallest y0 of any matching instance, or None if not found.
+        """
+        if not trigger:
+            return None
+
+        instances = page.search_for(trigger)
+        if instances:
+            return min(inst.y0 for inst in instances)
+
+        # Fallback: token-based scan (handles NBSP / multi-space between words)
+        # words tuple layout: (x0, y0, x1, y1, text, block_no, line_no, word_no)
+        trigger_tokens = trigger.split()
+        if not trigger_tokens:
+            return None
+        words = page.get_text("words")
+        n = len(trigger_tokens)
+        if n > len(words):
+            return None
+
+        # First: case-sensitive consecutive match
+        for i in range(len(words) - n + 1):
+            if all(words[i + j][4] == trigger_tokens[j] for j in range(n)):
+                return min(words[i + j][1] for j in range(n))
+
+        # Last resort: case-insensitive (some PDFs lower-case the header)
+        lower_tokens = [t.lower() for t in trigger_tokens]
+        for i in range(len(words) - n + 1):
+            if all(words[i + j][4].lower() == lower_tokens[j] for j in range(n)):
+                return min(words[i + j][1] for j in range(n))
+
+        return None
+
     def _redact_header_until_keyword(self, page: fitz.Page):
-        """Redact everything ABOVE the first found trigger keyword.
+        """Redact everything ABOVE the topmost trigger keyword on the page.
 
         Useful for variable-height headers (e.g. 'Sehr geehrte Kollegin',
-        'Herzkatheterbriefe').
+        'Untersucher:', 'Herzkatheterbriefe'). All trigger phrases are
+        searched and the topmost (smallest y0) wins — so the order of the
+        trigger list in the template doesn't matter.
 
         Args:
             page: PDF page object
@@ -342,47 +403,130 @@ class ZoneBasedAnonymizer:
             return
 
         triggers = config.get('triggers', [])
-        for trigger in triggers:
-            instances = page.search_for(trigger)
-            if instances:
-                trigger_y = instances[0].y0
-                # Redact everything ABOVE the trigger line
-                rect = fitz.Rect(
-                    0,
-                    0,
-                    page.rect.width,
-                    trigger_y
-                )
-                page.add_redact_annot(rect, fill=(0, 0, 0))
-                logging.getLogger(__name__).info(
-                    f"Redacted header until keyword '{trigger}' at y={trigger_y}"
-                )
-                break  # Only use first matching trigger
+        log = logging.getLogger(__name__)
 
-    def _redact_pii_entities(self, page: fitz.Page, entities: List[PIIEntity], full_text: str, stats: dict):
-        """Redact PII entities found by structured extraction.
-        
+        # Collect the topmost hit per trigger, then pick overall topmost.
+        candidates = []
+        for trigger in triggers:
+            y = self._find_trigger_y(page, trigger)
+            if y is not None:
+                candidates.append((y, trigger))
+
+        if not candidates:
+            log.debug(
+                f"header_until_keyword: no trigger from {triggers!r} found on page"
+            )
+            return
+
+        trigger_y, trigger = min(candidates, key=lambda c: c[0])
+        if trigger_y <= 0:
+            log.debug(
+                f"header_until_keyword: trigger '{trigger}' is at top of page "
+                f"(y={trigger_y}); nothing to redact above it"
+            )
+            return
+
+        rect = fitz.Rect(0, 0, page.rect.width, trigger_y)
+        page.add_redact_annot(rect, fill=(0, 0, 0))
+        log.info(
+            f"Redacted header until keyword '{trigger}' at y={trigger_y:.1f}"
+        )
+
+    @staticmethod
+    def _build_text_with_offsets(words):
+        """Reconstruct page text from PyMuPDF word tokens and remember offsets.
+
+        ``words`` is the list returned by ``page.get_text("words")``; each
+        entry has layout ``(x0, y0, x1, y1, text, block_no, line_no, word_no)``.
+        We join words on the same (block, line) with a single space and use
+        ``\\n`` between lines so the resulting text behaves like the regular
+        ``page.get_text()`` output (regex patterns using ``^`` keep working
+        under ``re.MULTILINE``).
+
+        Returns:
+            (joined_text, word_ranges) — ``word_ranges`` is a list of
+            ``(char_start, char_end, word_index)`` aligned with the input
+            list, where ``char_start`` / ``char_end`` are offsets in
+            ``joined_text``.
+        """
+        parts = []
+        word_ranges = []
+        pos = 0
+        prev_block = None
+        prev_line = None
+        for i, w in enumerate(words):
+            text = w[4]
+            block_no = w[5]
+            line_no = w[6]
+            if prev_block is not None:
+                if block_no != prev_block or line_no != prev_line:
+                    parts.append("\n")
+                    pos += 1
+                else:
+                    parts.append(" ")
+                    pos += 1
+            parts.append(text)
+            word_ranges.append((pos, pos + len(text), i))
+            pos += len(text)
+            prev_block = block_no
+            prev_line = line_no
+        return "".join(parts), word_ranges
+
+    def _redact_pii_entities(
+        self,
+        page: fitz.Page,
+        entities: List[PIIEntity],
+        words: list,
+        word_ranges: list,
+        joined_text: str,
+    ):
+        """Redact PII entities at their exact word rectangles.
+
+        For each entity we find the words whose character ranges overlap
+        ``[entity.start_pos, entity.end_pos)`` and add a redact annotation
+        around the union of their bounding boxes. Falls back to
+        ``page.search_for`` only when the entity text cannot be mapped to
+        a word range (rare; happens e.g. when the extractor normalises
+        whitespace differently than the word tokenisation).
+
         Args:
             page: PDF page object
-            entities: List of PIIEntity objects to redact
-            full_text: Full page text for context
-            stats: Statistics dictionary
+            entities: PIIEntity objects whose offsets refer to ``joined_text``
+            words: page.get_text("words") output
+            word_ranges: parallel list of (char_start, char_end, word_idx)
+            joined_text: the reconstructed text the extractor ran on
         """
+        log = logging.getLogger(__name__)
         for entity in entities:
-            # Search for the entity text on the page
+            overlapping = [
+                wr for wr in word_ranges
+                if wr[1] > entity.start_pos and wr[0] < entity.end_pos
+            ]
+            if overlapping:
+                x0 = min(words[wr[2]][0] for wr in overlapping) - 1
+                y0 = min(words[wr[2]][1] for wr in overlapping) - 1
+                x1 = max(words[wr[2]][2] for wr in overlapping) + 2
+                y1 = max(words[wr[2]][3] for wr in overlapping) + 1
+                page.add_redact_annot(fitz.Rect(x0, y0, x1, y1), fill=(0, 0, 0))
+                continue
+
+            # Fallback for the rare case the offset mapping doesn't line up
+            # (e.g. extractor saw a normalised character the words list
+            # doesn't expose). Use search_for, but only redact the first hit
+            # to avoid the historical over-redaction problem.
+            log.debug(
+                f"PII entity '{entity.text}' could not be mapped to word "
+                f"tokens (pos {entity.start_pos}-{entity.end_pos}); falling "
+                f"back to page.search_for"
+            )
             areas = page.search_for(entity.text)
-            
-            for area in areas:
-                # Minimal padding to handle font rendering edge cases
-                # Reduced from previous values (2-10px) to prevent over-redaction
-                extended_rect = fitz.Rect(
-                    area.x0 - 1,   # 1px left (minimal padding)
-                    area.y0 - 1,   # 1px top (minimal padding)
-                    area.x1 + 2,   # 2px right (slightly more for italic fonts)
-                    area.y1 + 1    # 1px bottom (minimal padding)
-                )
-                # Standard black redaction for all entities
-                page.add_redact_annot(extended_rect, fill=(0, 0, 0))
+            if not areas:
+                continue
+            area = areas[0]
+            page.add_redact_annot(
+                fitz.Rect(area.x0 - 1, area.y0 - 1, area.x1 + 2, area.y1 + 1),
+                fill=(0, 0, 0),
+            )
 
     def _check_cutoff_trigger(self, page: fitz.Page, page_num: int) -> Optional[int]:
         """Check if the cut-off trigger keyword is on this page and redact below it.

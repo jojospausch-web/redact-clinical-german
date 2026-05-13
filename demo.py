@@ -94,7 +94,7 @@ def demonstrate_anonymization():
     print("  1. Try with your own PDFs: python src/main.py <your-file.pdf>")
     print("  2. Customize templates: edit templates/german_clinical_default.json")
     print("  3. Run tests: pytest tests/ -v")
-    print("  4. Build Docker image: ./build-docker.sh")
+    print("  4. Launch the UI: streamlit run app.py")
     print()
 
 

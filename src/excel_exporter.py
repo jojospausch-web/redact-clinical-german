@@ -7,16 +7,21 @@ import openpyxl
 import io
 
 
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract all text from a PDF file.
+def extract_text_from_pdf(pdf_source: "str | bytes | bytearray | memoryview") -> str:
+    """Extract all text from a PDF.
 
     Args:
-        pdf_path: Path to the PDF file.
+        pdf_source: Either a filesystem path (str / PathLike) or the raw
+            PDF bytes. Passing bytes is preferred when the PDF is already
+            in memory — it avoids round-tripping through disk.
 
     Returns:
         Concatenated text content of all pages.
     """
-    doc = fitz.open(pdf_path)
+    if isinstance(pdf_source, (bytes, bytearray, memoryview)):
+        doc = fitz.open(stream=bytes(pdf_source), filetype="pdf")
+    else:
+        doc = fitz.open(pdf_source)
     pages_text = [page.get_text() for page in doc]
     doc.close()
     return "\n".join(pages_text)

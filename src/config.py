@@ -1,6 +1,6 @@
 """Configuration models for the anonymization system using Pydantic."""
 
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -36,15 +36,6 @@ class PatternGroup(BaseModel):
     type: Optional[str] = None
     context_trigger: Optional[str] = None
     lookahead: Optional[int] = None
-
-
-class DateHandlingConfig(BaseModel):
-    """Configuration for date handling."""
-    model_config = ConfigDict(extra='allow')
-    
-    pattern: str
-    action: str = Field(..., pattern="^(shift|shift_relative|remove)$")
-    shift_days_range: Optional[Tuple[int, int]] = None
 
 
 class SignatureBlockConfig(BaseModel):
@@ -84,14 +75,11 @@ class AnonymizationTemplate(BaseModel):
     version: str
     zones: Dict[str, ZoneConfig]
     structured_patterns: Dict[str, PatternGroup]
-    date_handling: Optional[Dict[str, DateHandlingConfig]] = None
     image_pii_patterns: Dict[str, str]
-    
+
     # Optional fields for additional configurations
     signature_block: Optional[SignatureBlockConfig] = None
     personal_block: Optional[PersonalBlockConfig] = None
-    shift_days: Optional[int] = None
-    location_anonymization: Optional[Dict[str, Any]] = None
     pii_mechanisms: Optional[Dict[str, str]] = None
     whitelist: Optional[WhitelistConfig] = None
     info: Optional[str] = None
