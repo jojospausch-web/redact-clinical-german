@@ -464,6 +464,32 @@ if user_tpl is None:
         "whitelist": {"medical": [], "anatomical": [], "devices": []}
     }
 
+# When the user picks a different template, push that template's state into
+# the sidebar widget keys. Without this, Streamlit keeps showing the inputs
+# from the previous template (key= wins over value= after the first render).
+_DEFAULT_HUK_TRIGGERS = [
+    "Sehr geehrte Kollegin",
+    "Sehr geehrter Kollege",
+    "Sehr geehrter Herr Kollege",
+    "Untersucher",
+    "Herzkatheterbriefe",
+    "Arztbrief",
+]
+
+
+def _sync_sidebar_to_template(tpl: dict) -> None:
+    huk = tpl.get("header_until_keyword") or {}
+    st.session_state["sb_huk_enabled"] = bool(huk.get("enabled", False))
+    st.session_state["sb_huk_triggers"] = "\n".join(
+        huk.get("triggers") or _DEFAULT_HUK_TRIGGERS
+    )
+    st.session_state["sb_bl_exact"] = "\n".join(tpl.get("blacklist_exact") or [])
+
+
+if st.session_state.get("_active_template_name") != selected_template:
+    _sync_sidebar_to_template(user_tpl)
+    st.session_state["_active_template_name"] = selected_template
+
 # ── Sidebar: header-until-keyword + blacklist ─────────────────────────────────
 
 with st.sidebar:
@@ -471,27 +497,16 @@ with st.sidebar:
 
     # ── Header bis Keyword (variable Header-Höhe) ─────────────────────────────
     st.header("🟣 Header bis Keyword")
-    _huk_default = user_tpl.get("header_until_keyword") or {}
     huk_enabled = st.checkbox(
         "Aktivieren",
-        value=bool(_huk_default.get("enabled", False)),
         help=(
             "Schwärzt alles ÜBER dem ersten gefundenen Keyword (z.B. 'Untersucher', "
             "'Sehr geehrte Kollegin'). Nützlich für Header mit variabler Höhe."
         ),
         key="sb_huk_enabled",
     )
-    _huk_default_triggers = _huk_default.get("triggers", [
-        "Sehr geehrte Kollegin",
-        "Sehr geehrter Kollege",
-        "Sehr geehrter Herr Kollege",
-        "Untersucher",
-        "Herzkatheterbriefe",
-        "Arztbrief",
-    ])
     huk_triggers_raw = st.text_area(
         "Trigger-Keywords (einer pro Zeile)",
-        value="\n".join(_huk_default_triggers),
         height=120,
         help="Es gewinnt das oberste Vorkommen auf der Seite — Reihenfolge ist egal.",
         key="sb_huk_triggers",
@@ -508,15 +523,14 @@ with st.sidebar:
     # ── Blacklist (exact, case-sensitive) ─────────────────────────────────────
     st.header("🚫 Blacklist (exakt)")
 
-    _bl_default = "\n".join(user_tpl.get("blacklist_exact", []))
     blacklist_input = st.text_area(
         "Begriffe/Phrasen (eine pro Zeile)",
-        value=_bl_default,
         height=120,
         help=(
             "Groß-/Kleinschreibung wird beachtet. Ganze Wörter/Phrasen werden geschwärzt.\n"
             "Beispiel: 'UMG' schwärzt 'UMG', aber nicht 'Umgeben'."
-        )
+        ),
+        key="sb_bl_exact",
     )
     blacklist_entries = [line.strip() for line in blacklist_input.splitlines() if line.strip()]
 
