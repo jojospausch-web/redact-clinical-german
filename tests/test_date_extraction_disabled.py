@@ -96,17 +96,6 @@ def test_patient_block_pattern_still_exists():
     assert patient_block.groups["4"] == "BIRTHDATE"
 
 
-def test_date_handling_block_still_exists():
-    """Test that date_handling block still exists (for future use)."""
-    template = load_template()
-    
-    # date_handling should still exist
-    assert template.date_handling is not None, "date_handling should still exist in template"
-    
-    # birthdate handling should still exist
-    assert "birthdate" in template.date_handling
-
-
 def test_mixed_content_extraction():
     """Test extraction with mixed content (birthdate + regular dates)."""
     template = load_template()

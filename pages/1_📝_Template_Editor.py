@@ -217,10 +217,13 @@ with tab_zones:
 
 _DEFAULT_PATTERNS = [
     "patient_block", "case_id", "address",
-    "doctor_name", "doctor_with_location", "doctor_signature", "referring_doctor",
+    "doctor_name", "doctor_name_parentheses", "salutation_with_name",
+    "doctor_with_location", "doctor_signature", "referring_doctor",
     "postal_code_with_city", "postal_code_standalone",
     "city_facility_simple", "university_hospital", "medical_facility_with_city",
+    "medical_facility",
     "phone_landline", "phone_mobile", "phone_context", "email", "fax", "hk_number",
+    "pacemaker_id",
 ]
 
 with tab_patterns:
@@ -276,6 +279,18 @@ with tab_patterns:
             help="Erkennt: Dr. med. Karl Müller, Prof. Schmidt",
             key="pat_doctor_name",
         )
+        active_patterns["doctor_name_parentheses"] = st.checkbox(
+            "Arzt-Name in Klammern",
+            value=active_patterns.get("doctor_name_parentheses", True),
+            help="Erkennt: (PD Dr. Christoph Jensen)",
+            key="pat_doctor_parens",
+        )
+        active_patterns["salutation_with_name"] = st.checkbox(
+            "Anrede + Name (Herr/Frau X)",
+            value=active_patterns.get("salutation_with_name", True),
+            help="Erkennt: Herr Müller, Frau Schmidt-Bayer",
+            key="pat_salutation",
+        )
         active_patterns["doctor_with_location"] = st.checkbox(
             "Arzt mit Standort",
             value=active_patterns.get("doctor_with_location", True),
@@ -330,6 +345,12 @@ with tab_patterns:
             help="Erkennt: Hamburger Herzzentrum, Göttinger MVZ",
             key="pat_facility_generic",
         )
+        active_patterns["medical_facility"] = st.checkbox(
+            "Einrichtung + Ort (Typ-basiert)",
+            value=active_patterns.get("medical_facility", True),
+            help="Erkennt: Herzzentrum Bad Oeynhausen, Rehaklinik Bad Salzuflen",
+            key="pat_facility_typed",
+        )
 
     with st.expander("📞 Kontakt-Informationen", expanded=True):
         st.warning(
@@ -371,6 +392,14 @@ with tab_patterns:
             value=active_patterns.get("hk_number", True),
             help="Erkennt: HK-Nr.: 1234/56",
             key="pat_hk_number",
+        )
+
+    with st.expander("🔬 Geräte-IDs", expanded=False):
+        active_patterns["pacemaker_id"] = st.checkbox(
+            "Schrittmacher / ICD-Seriennummern",
+            value=active_patterns.get("pacemaker_id", True),
+            help="Erkennt: DR 268880, VR 123456, ICD 987654, CRT 456789, PM/SM …",
+            key="pat_pacemaker",
         )
 
 # ── Tab 3: Whitelist ──────────────────────────────────────────────────────────

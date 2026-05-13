@@ -12,6 +12,7 @@ from typing import List
 import zipfile
 import io
 import logging
+import shutil
 import sys
 import tempfile
 import os
@@ -43,102 +44,196 @@ logger = logging.getLogger(__name__)
 # HELPER FUNCTIONS
 # ============================================
 
-def create_preview_with_zones(pdf_file, header_page1: int, footer_page1: int, footer_other: int) -> Image.Image:
+
+def _safe_rmtree(path) -> None:
+    """Best-effort recursive delete. Swallows errors but logs them."""
+    if not path:
+        return
+    p = Path(path)
+    if not p.exists():
+        return
+    try:
+        shutil.rmtree(p, ignore_errors=False)
+    except OSError as exc:
+        logger.warning("Konnte Temp-Verzeichnis '%s' nicht entfernen: %s", p, exc)
+
+
+def _safe_unlink(path) -> None:
+    if not path:
+        return
+    p = Path(path)
+    if not p.exists():
+        return
+    try:
+        p.unlink()
+    except OSError as exc:
+        logger.warning("Konnte Temp-Datei '%s' nicht entfernen: %s", p, exc)
+
+def _find_trigger_y_in_page(page, trigger: str):
+    """Return topmost y0 of `trigger` on `page` (PDF points), or None.
+
+    Mirrors `ZoneBasedAnonymizer._find_trigger_y` so the preview shows the
+    exact same line the redaction would use. Robust against non-breaking
+    spaces and word-tokenisation quirks.
+    """
+    if not trigger:
+        return None
+    instances = page.search_for(trigger)
+    if instances:
+        return min(inst.y0 for inst in instances)
+
+    trigger_tokens = trigger.split()
+    if not trigger_tokens:
+        return None
+    words = page.get_text("words")
+    n = len(trigger_tokens)
+    if n > len(words):
+        return None
+    for i in range(len(words) - n + 1):
+        if all(words[i + j][4] == trigger_tokens[j] for j in range(n)):
+            return min(words[i + j][1] for j in range(n))
+    lower_tokens = [t.lower() for t in trigger_tokens]
+    for i in range(len(words) - n + 1):
+        if all(words[i + j][4].lower() == lower_tokens[j] for j in range(n)):
+            return min(words[i + j][1] for j in range(n))
+    return None
+
+
+def create_preview_with_zones(
+    pdf_file,
+    header_page1: int,
+    footer_page1: int,
+    footer_other: int,
+    header_until_keyword: dict = None,
+) -> "tuple[Image.Image, dict]":
     """Erstellt Vorschau mit eingezeichneten Zonen.
-    
+
     Args:
         pdf_file: Uploaded PDF file object
         header_page1: Height of header zone in PDF points from top (Page 1)
         footer_page1: Height of footer zone in PDF points from bottom (Page 1)
         footer_other: Height of footer zone in PDF points from bottom (Pages 2+)
-        
+        header_until_keyword: Optional `{"enabled": bool, "triggers": [str, ...]}`
+            config. When enabled, the topmost matching trigger on the first
+            page is highlighted in magenta.
+
     Returns:
-        PIL Image with zone overlays
+        (preview_image, info_dict) where info_dict carries diagnostic data
+        for the UI (e.g. which trigger was matched, or that no trigger was
+        found).
     """
-    # Read PDF bytes and handle potential seek issues
+    info = {"trigger_hit": None, "trigger_y_pt": None, "triggers_searched": []}
+
     pdf_bytes = pdf_file.read()
-    
-    # Reset file pointer if possible (for later use by other functions)
     try:
         pdf_file.seek(0)
     except (AttributeError, io.UnsupportedOperation):
-        # If seek is not supported, that's okay - we already have the bytes
         pass
-    
-    # Open PDF with PyMuPDF using the bytes we read
+
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    page = doc[0]  # Get first page
-    
-    # Render page as image with 2x zoom for better quality
+    page = doc[0]
+
     zoom = 2
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat)
-    
-    # Convert to PIL Image
     img_data = pix.tobytes("png")
     img = Image.open(io.BytesIO(img_data))
-    
-    # Create transparent overlay for zones
+
     overlay = Image.new('RGBA', img.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(overlay)
-    
-    page_height = pix.height
-    page_width = pix.width
-    
-    # PDF coordinates are from bottom, but display is from top
-    # header_page1 is from top in PDF points (A4 = 842pt)
-    # Scale to actual image pixels
-    A4_HEIGHT = 842
-    header_y_end = int((header_page1 / A4_HEIGHT) * page_height)
-    
-    # Draw header zone (blue)
+
+    page_height_px = pix.height
+    page_width_px = pix.width
+    # Scale factor from PDF points to preview pixels
+    page_height_pt = page.rect.height or 842
+    pt_to_px = page_height_px / page_height_pt
+
+    # Header zone (blue) — y=0..header_page1 in PDF points
+    header_y_end = int(header_page1 * pt_to_px)
     draw.rectangle(
-        [(0, 0), (page_width, header_y_end)],
+        [(0, 0), (page_width_px, header_y_end)],
         fill=(0, 100, 255, 80),
         outline=(0, 100, 255, 200),
-        width=3
+        width=3,
     )
-    
-    # Draw footer zone Page 1 (orange)
-    footer1_y_start = page_height - int((footer_page1 / A4_HEIGHT) * page_height)
+
+    # Footer page 1 (orange) — bottom-aligned strip of `footer_page1` pt
+    footer1_y_start = page_height_px - int(footer_page1 * pt_to_px)
     draw.rectangle(
-        [(0, footer1_y_start), (page_width, page_height)],
+        [(0, footer1_y_start), (page_width_px, page_height_px)],
         fill=(255, 140, 0, 80),
         outline=(255, 140, 0, 200),
-        width=3
+        width=3,
     )
-    
-    # Add text overlay for info
-    try:
-        from PIL import ImageFont
-        # Try common font paths across different operating systems
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-            "/System/Library/Fonts/Helvetica.ttc",  # macOS
-            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
-        ]
-        font = None
-        for font_path in font_paths:
-            try:
-                font = ImageFont.truetype(font_path, 16)
-                break
-            except (OSError, IOError):
-                continue
-        if font is None:
-            font = ImageFont.load_default()
-    except (OSError, IOError):
-        from PIL import ImageFont
+
+    # Footer pages 2+ (green) — bottom-aligned strip of `footer_other` pt
+    footer_other_y_start = page_height_px - int(footer_other * pt_to_px)
+    draw.rectangle(
+        [(0, footer_other_y_start), (page_width_px, page_height_px)],
+        fill=(0, 200, 0, 40),
+        outline=(0, 160, 0, 200),
+        width=2,
+    )
+
+    # Header-until-keyword zone (magenta) — only if enabled and a trigger hits
+    if header_until_keyword and header_until_keyword.get("enabled"):
+        triggers = [t for t in header_until_keyword.get("triggers", []) if t]
+        info["triggers_searched"] = triggers
+        candidates = []
+        for trigger in triggers:
+            y_pt = _find_trigger_y_in_page(page, trigger)
+            if y_pt is not None:
+                candidates.append((y_pt, trigger))
+        if candidates:
+            trigger_y_pt, hit = min(candidates, key=lambda c: c[0])
+            info["trigger_hit"] = hit
+            info["trigger_y_pt"] = trigger_y_pt
+            trigger_y_px = int(trigger_y_pt * pt_to_px)
+            # Hatched magenta zone from page top down to the trigger line
+            draw.rectangle(
+                [(0, 0), (page_width_px, trigger_y_px)],
+                fill=(200, 0, 200, 60),
+                outline=(180, 0, 180, 220),
+                width=3,
+            )
+            # Draw the trigger baseline as a thick line for orientation
+            draw.line(
+                [(0, trigger_y_px), (page_width_px, trigger_y_px)],
+                fill=(180, 0, 180, 255),
+                width=3,
+            )
+
+    # Font selection (one source of truth)
+    from PIL import ImageFont
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+        "/System/Library/Fonts/Helvetica.ttc",              # macOS
+        "C:\\Windows\\Fonts\\arial.ttf",                    # Windows
+    ]
+    font = None
+    for font_path in font_paths:
+        try:
+            font = ImageFont.truetype(font_path, 16)
+            break
+        except (OSError, IOError):
+            continue
+    if font is None:
         font = ImageFont.load_default()
-    
+
     draw.text((10, 10), f"Header: {header_page1}pt", fill=(0, 100, 255, 255), font=font)
-    draw.text((10, page_height - 30), f"Footer Seite 1: {footer_page1}pt", fill=(255, 140, 0, 255), font=font)
-    draw.text((10, page_height - 60), f"Footer Seite 2+: {footer_other}pt", fill=(0, 200, 0, 255), font=font)
-    
-    # Combine original image with overlay
+    draw.text((10, page_height_px - 30), f"Footer Seite 1: {footer_page1}pt", fill=(255, 140, 0, 255), font=font)
+    draw.text((10, page_height_px - 60), f"Footer Seite 2+: {footer_other}pt", fill=(0, 200, 0, 255), font=font)
+    if info["trigger_hit"]:
+        draw.text(
+            (10, max(40, int(info["trigger_y_pt"] * pt_to_px) - 22)),
+            f"Header bis Keyword: '{info['trigger_hit']}'",
+            fill=(180, 0, 180, 255),
+            font=font,
+        )
+
     result = Image.alpha_composite(img.convert('RGBA'), overlay)
     doc.close()
-    
-    return result.convert('RGB')
+    return result.convert('RGB'), info
 
 
 def create_custom_template(
@@ -183,7 +278,6 @@ def create_custom_template(
             "version": "2.0",
             "zones": {},
             "structured_patterns": {},
-            "date_handling": {},
             "pii_mechanisms": {},
             "image_pii_patterns": {}
         }
@@ -307,6 +401,7 @@ st.info(
     "🔵 **Blau** = Header Seite 1 | "
     "🟠 **Orange** = Footer Seite 1 | "
     "🟢 **Grün** = Footer Folgeseiten | "
+    "🟣 **Magenta** = Header bis Keyword (variable Höhe) | "
     "⬛ **Schwarz** = Signatur-Block & Personal:-Block"
 )
 
@@ -353,6 +448,9 @@ with st.sidebar:
 
     # Clear results button
     if st.button("🗑️ Ergebnisse löschen"):
+        for r in st.session_state.get('results', []):
+            _safe_rmtree(r.get('temp_dir'))  # legacy entries (if any)
+        _safe_unlink(st.session_state.pop('tpl_temp_path', None))
         st.session_state['results'] = []
         st.rerun()
 
@@ -366,9 +464,45 @@ if user_tpl is None:
         "whitelist": {"medical": [], "anatomical": [], "devices": []}
     }
 
-# ── Blacklist sidebar section (needs user_tpl, so placed after template load) ─
+# ── Sidebar: header-until-keyword + blacklist ─────────────────────────────────
 
 with st.sidebar:
+    st.divider()
+
+    # ── Header bis Keyword (variable Header-Höhe) ─────────────────────────────
+    st.header("🟣 Header bis Keyword")
+    _huk_default = user_tpl.get("header_until_keyword") or {}
+    huk_enabled = st.checkbox(
+        "Aktivieren",
+        value=bool(_huk_default.get("enabled", False)),
+        help=(
+            "Schwärzt alles ÜBER dem ersten gefundenen Keyword (z.B. 'Untersucher', "
+            "'Sehr geehrte Kollegin'). Nützlich für Header mit variabler Höhe."
+        ),
+        key="sb_huk_enabled",
+    )
+    _huk_default_triggers = _huk_default.get("triggers", [
+        "Sehr geehrte Kollegin",
+        "Sehr geehrter Kollege",
+        "Sehr geehrter Herr Kollege",
+        "Untersucher",
+        "Herzkatheterbriefe",
+        "Arztbrief",
+    ])
+    huk_triggers_raw = st.text_area(
+        "Trigger-Keywords (einer pro Zeile)",
+        value="\n".join(_huk_default_triggers),
+        height=120,
+        help="Es gewinnt das oberste Vorkommen auf der Seite — Reihenfolge ist egal.",
+        key="sb_huk_triggers",
+        disabled=not huk_enabled,
+    )
+    huk_triggers = [t.strip() for t in huk_triggers_raw.splitlines() if t.strip()]
+    header_until_keyword_runtime = {
+        "enabled": huk_enabled,
+        "triggers": huk_triggers,
+    }
+
     st.divider()
 
     # ── Blacklist (exact, case-sensitive) ─────────────────────────────────────
@@ -407,18 +541,42 @@ if uploaded_files:
     st.header("📄 Vorschau mit Schwärzungs-Bereichen")
 
     try:
-        preview_image = create_preview_with_zones(
+        preview_image, preview_info = create_preview_with_zones(
             pdf_file=uploaded_files[0],
             header_page1=header_page1,
             footer_page1=footer_page1,
-            footer_other=footer_other
+            footer_other=footer_other,
+            header_until_keyword=header_until_keyword_runtime,
         )
 
         st.image(preview_image, caption=f"Vorschau: {uploaded_files[0].name}", use_container_width=True)
 
-        st.info(f"🔵 **Blauer Bereich** = Header Seite 1 ({header_page1}px von oben) | "
-                f"🟠 **Oranger Bereich** = Footer Seite 1 ({footer_page1}px von unten) | "
-                f"🟢 **Grüner Text** = Footer Folgeseiten ({footer_other}px)")
+        legend = (
+            f"🔵 **Header Seite 1** ({header_page1}pt) | "
+            f"🟠 **Footer Seite 1** ({footer_page1}pt) | "
+            f"🟢 **Footer Folgeseiten** ({footer_other}pt)"
+        )
+        if header_until_keyword_runtime["enabled"]:
+            if preview_info["trigger_hit"]:
+                legend += (
+                    f" | 🟣 **Header bis Keyword** — Trigger gefunden: "
+                    f"`{preview_info['trigger_hit']}` bei y={preview_info['trigger_y_pt']:.0f}pt"
+                )
+            else:
+                legend += " | 🟣 **Header bis Keyword** — kein Trigger auf Seite 1 gefunden"
+        st.info(legend)
+
+        if (
+            header_until_keyword_runtime["enabled"]
+            and not preview_info["trigger_hit"]
+            and preview_info["triggers_searched"]
+        ):
+            st.warning(
+                "⚠️ Keiner der konfigurierten Trigger ("
+                + ", ".join(f"`{t}`" for t in preview_info["triggers_searched"])
+                + ") wurde auf Seite 1 gefunden. Auf dieser Seite wird KEIN "
+                "Header-bis-Keyword-Bereich geschwärzt. Bitte Schreibweise prüfen."
+            )
     except Exception as e:
         st.warning(f"⚠️ Vorschau konnte nicht erstellt werden: {str(e)}")
 
@@ -427,7 +585,8 @@ if uploaded_files:
 
     # Batch processing button and logic (consolidated in same block)
     if st.button("🚀 Anonymisierung starten", type="primary", use_container_width=True):
-        # Clear previous results
+        # Drop in-memory bytes from previous runs (Temp-Dirs were cleaned up
+        # right after their previous run already).
         st.session_state['results'] = []
 
         # Extract settings from user template
@@ -449,12 +608,17 @@ if uploaded_files:
             whitelist_medical=medical_terms,
             whitelist_anatomical=anatomical_terms,
             whitelist_devices=device_names,
-            header_until_keyword=user_tpl.get("header_until_keyword"),
+            header_until_keyword=header_until_keyword_runtime,
             blacklist_exact=blacklist_entries
         )
 
-        # Save custom template to temp file
-        temp_template_path = Path(tempfile.gettempdir()) / "custom_template.json"
+        # Per-session temp template file (avoids collisions between parallel
+        # Streamlit tabs / users).
+        if 'tpl_temp_path' not in st.session_state:
+            tpl_fd, tpl_path = tempfile.mkstemp(prefix='redact_tpl_', suffix='.json')
+            os.close(tpl_fd)
+            st.session_state['tpl_temp_path'] = tpl_path
+        temp_template_path = Path(st.session_state['tpl_temp_path'])
         with open(temp_template_path, 'w', encoding='utf-8') as f:
             json.dump(custom_template, f, indent=2, ensure_ascii=False)
 
@@ -468,49 +632,59 @@ if uploaded_files:
         for idx, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Verarbeite {uploaded_file.name} ({idx+1}/{total})...")
 
-            # Sanitize filename to prevent path traversal attacks
             safe_filename = re.sub(r'[^\w\s.-]', '_', uploaded_file.name)
-            safe_filename = os.path.basename(safe_filename)  # Remove any path components
+            safe_filename = os.path.basename(safe_filename)
 
-            # Create unique temporary directory for this file
             temp_dir = tempfile.mkdtemp(prefix='redact_')
-            temp_input = Path(temp_dir) / safe_filename
-            temp_input.write_bytes(uploaded_file.read())
-
-            # Create temp output directory
-            temp_output_dir = Path(temp_dir) / "output"
-            temp_output_dir.mkdir(parents=True, exist_ok=True)
-            temp_output = temp_output_dir / f"anonymized_{safe_filename}"
-
-            # Call anonymization (date shifting is handled internally / randomly)
             try:
-                result = anonymize_pdf(
-                    input_path=str(temp_input),
-                    template_path=str(temp_template_path),
-                    output_path=str(temp_output),
-                    shift_days=None,  # Always random shift
-                    extract_images=extract_images
-                )
+                temp_input = Path(temp_dir) / safe_filename
+                temp_input.write_bytes(uploaded_file.read())
+
+                temp_output_dir = Path(temp_dir) / "output"
+                temp_output_dir.mkdir(parents=True, exist_ok=True)
+                temp_output = temp_output_dir / f"anonymized_{safe_filename}"
+
+                try:
+                    result = anonymize_pdf(
+                        input_path=str(temp_input),
+                        template_path=str(temp_template_path),
+                        output_path=str(temp_output),
+                        extract_images=extract_images
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing {uploaded_file.name}: {e}")
+                    st.error(f"❌ Fehler bei {uploaded_file.name}: {str(e)}")
+                    continue
+
+                # Load the produced artefacts into memory so we can throw the
+                # disk copies away straight away — no leftover Temp-Dirs.
+                anonymized_bytes = Path(result['output_pdf']).read_bytes()
+                image_blobs = []
+                for img_path in result.get('images', []):
+                    try:
+                        image_blobs.append({
+                            'name': Path(img_path).name,
+                            'bytes': Path(img_path).read_bytes(),
+                        })
+                    except OSError as exc:
+                        logger.warning("Konnte Bild '%s' nicht lesen: %s", img_path, exc)
 
                 results.append({
                     'original_name': uploaded_file.name,
-                    'anonymized_pdf': result['output_pdf'],
-                    'images': result.get('images', []),
-                    'stats': result.get('stats', {})
+                    'safe_filename': safe_filename,
+                    'pdf_bytes': anonymized_bytes,
+                    'image_blobs': image_blobs,
+                    'stats': result.get('stats', {}),
                 })
-
                 logger.info(f"Successfully processed {uploaded_file.name}")
 
-            except Exception as e:
-                logger.error(f"Error processing {uploaded_file.name}: {e}")
-                st.error(f"❌ Fehler bei {uploaded_file.name}: {str(e)}")
+            finally:
+                # Always wipe the per-file Temp-Dir, success or failure.
+                _safe_rmtree(temp_dir)
 
-            # Update progress
             progress_bar.progress((idx + 1) / total)
 
         status_text.text("✅ Fertig!")
-
-        # Store results in session state
         st.session_state['results'] = results
 
 # Download section
@@ -526,17 +700,14 @@ if 'results' in st.session_state and st.session_state['results']:
         with col:
             st.markdown(f"**{result['original_name']}**")
 
-            # PDF download
-            with open(result['anonymized_pdf'], 'rb') as f:
-                st.download_button(
-                    label="📄 PDF",
-                    data=f.read(),
-                    file_name=f"anonymized_{result['original_name']}",
-                    mime="application/pdf",
-                    key=f"pdf_{idx}"
-                )
+            st.download_button(
+                label="📄 PDF",
+                data=result['pdf_bytes'],
+                file_name=f"anonymized_{result['original_name']}",
+                mime="application/pdf",
+                key=f"pdf_{idx}",
+            )
 
-            # Stats
             stats = result['stats']
             st.caption(f"Seiten: {stats.get('total_pages', 0)}")
             st.caption(f"PII gefunden: {stats.get('pii_entities_found', 0)}")
@@ -548,20 +719,15 @@ if 'results' in st.session_state and st.session_state['results']:
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for result in st.session_state['results']:
-            # Add PDF
-            with open(result['anonymized_pdf'], 'rb') as f:
+            zip_file.writestr(
+                f"anonymized_{result['original_name']}",
+                result['pdf_bytes'],
+            )
+            for img_idx, blob in enumerate(result.get('image_blobs', [])):
                 zip_file.writestr(
-                    f"anonymized_{result['original_name']}",
-                    f.read()
+                    f"images/{result['original_name']}_image_{img_idx}.png",
+                    blob['bytes'],
                 )
-
-            # Add images if any
-            for img_idx, img_path in enumerate(result['images']):
-                with open(img_path, 'rb') as f:
-                    zip_file.writestr(
-                        f"images/{result['original_name']}_image_{img_idx}.png",
-                        f.read()
-                    )
 
     st.download_button(
         label="📦 Alle Dateien als ZIP herunterladen",
@@ -575,11 +741,11 @@ if 'results' in st.session_state and st.session_state['results']:
     excel_results = []
     for result in st.session_state['results']:
         try:
-            anon_text = extract_text_from_pdf(result['anonymized_pdf'])
+            anon_text = extract_text_from_pdf(result['pdf_bytes'])
         except Exception as exc:
             logger.warning(
                 "Excel export: failed to extract text from '%s': %s",
-                result['anonymized_pdf'],
+                result['original_name'],
                 exc,
             )
             anon_text = ""

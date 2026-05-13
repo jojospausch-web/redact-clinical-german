@@ -1,117 +1,111 @@
 # redact-clinical-german
 
-**Zone-based Anonymization System for German Clinical Doctor Letters (Arztbriefe)**
+**Zonen-basierte Anonymisierung deutscher Arztbriefe (PDF)**
 
-A sophisticated Python tool for anonymizing German medical documents (PDFs) using structured, context-based pattern matching. This system preserves medical terminology while redacting personally identifiable information (PII) such as names, addresses, case numbers, and dates.
+Lokal laufendes Python-Tool, das Arztbriefe als PDF anonymisiert. Es kombiniert:
 
-## 🎯 Key Features
+- **Zonenbasierte Schwärzung** (Header / Footer / Signaturblock / „Personal:" / „Header bis Keyword")
+- **Strukturierte PII-Erkennung** über kontextbasierte Regex-Patterns (Patientenblock, Fall-Nr., Adresse, Arztname, Telefon, E-Mail, Fax, HK-Nummer, …)
+- **Exakte Wort-Bbox-Redaktion**: PII wird genau dort geschwärzt, wo der Treffer ist — nicht jedes weitere Vorkommen desselben Strings
+- **Case-sensitive Blacklist** (exakte Wörter/Phrasen, die immer geschwärzt werden)
+- **Whitelist** (medizinische Begriffe, die nie geschwärzt werden dürfen)
+- **OCR-basierte Bild-Anonymisierung** (Tesseract)
+- **Excel-Export** des anonymisierten Volltexts (Spalte „Dokument", Spalte „Text")
 
-- **Zone-Based PDF Anonymization**: Intelligently redacts header, footer, and main content zones
-- **Template System**: Create and manage reusable anonymization templates via the web UI
-- **Structured PII Extraction**: Uses contextual regex patterns (NOT generic NER)
-- **Medical Term Preservation**: Whitelist support per template
-- **Context-Based Location Detection**: Recognizes cities and medical facilities only in specific contexts
-- **German Month Name Support**: Handles dates with German month names ("5. November 2023")
-- **Image Extraction & Anonymization**: OCR-based detection and redaction of PII in embedded images
-- **Consistent Date Shifting**: Maintains temporal relationships while anonymizing dates
-- **Personal-Block Redaction**: Automatically censors the block after a `Personal:` keyword
-- **Docker Support**: Cross-platform deployment on Windows/macOS/Linux
+Es nutzt **kein NER** — Patterns sind explizit; medizinische Fachbegriffe lösen keine Schwärzung aus.
 
-## 🏗️ Architecture
+---
 
-This system is **NOT** based on NER (Named Entity Recognition) + whitelist approach. Instead, it uses:
+## 🏥 Klinik-Setup (Offline, Windows)
 
-1. **Zone-based PDF Analysis**: Different rules for header, footer, and main text
-2. **Contextual Regex Extraction**: Only extracts PII from specific contexts (e.g., "Patient: {NAME}")
-3. **Structured Document Processing**: Recognizes document structure (letterhead always has patient data)
-4. **Image OCR & Anonymization**: Extracts and anonymizes images separately
+Der Rollout auf einem Klinik-Rechner ohne Internet läuft mit zwei Installern (Tesseract + Miniconda) und einem Offline-Wheel-Cache.
 
-### Why Not NER?
+1. **Tesseract** installieren — `RedClinG_Requirements\tesseract-ocr-w64-setup-5.5.0.20241111.exe`
+2. **Miniconda** installieren — `RedClinG_Requirements\Miniconda3-latest-Windows-x86_64.exe`
+3. **Anaconda Prompt** starten
+4. **Dependencies offline** installieren:
+   ```bat
+   pip install --no-index --find-links S:\KARD\F_KI-PROPHET\Software\RedClinG_Requirements\requiredPackages\ -r S:\KARD\F_KI-PROPHET\Software\RedClinG_Requirements\requirements.txt
+   ```
+5. **App starten**:
+   ```bat
+   streamlit run S:\KARD\F_KI-PROPHET\Software\redact-clinical-german-main\app.py
+   ```
+   Streamlit öffnet die Oberfläche auf `http://localhost:8501`.
 
-- ❌ NER models flag medical terms (diseases, medications) as entities
-- ❌ Maintaining whitelists of medical terms is impractical
-- ✅ Contextual extraction is more precise and maintainable
-- ✅ Zero false positives on medical terminology
+### Updates ausrollen
 
-## 📦 Installation
+Der Klinik-Rechner wird per Datei-Copy aktualisiert. **Wichtig:** Tests und ihre Source-Dateien gehören zusammen — wenn du nur einzelne Tests austauschst, schlagen sie ggf. fehl, weil sich z. B. eine `*.json` oder ein `src/*.py` mit verändert hat. Am sichersten: kompletten Projektordner ersetzen.
 
-### Option 1: Using pip (Recommended for Development)
+Was darf **nicht** angefasst werden:
 
-```bash
-# Clone the repository
-git clone https://github.com/jojospausch-web/redact-clinical-german.git
-cd redact-clinical-german
+- `requirements.txt` — wegen des Offline-Wheel-Caches sind nur die unten gelisteten Pakete erlaubt
+- Setup-Workflow oben (tesseract + Miniconda + offline pip + `streamlit run app.py`)
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+Alles andere (UI, Templates, Patterns, Logik, Tests, Doku) ist freier Anpassungs-Spielraum.
 
-# Install dependencies
-pip install -r requirements.txt
+---
 
-# Install Tesseract OCR (required for image anonymization)
-# On Ubuntu/Debian:
-sudo apt-get install tesseract-ocr tesseract-ocr-deu
+## 📦 Erlaubte Python-Pakete
 
-# On macOS:
-brew install tesseract tesseract-lang
-
-# On Windows:
-# Download from: https://github.com/UB-Mannheim/tesseract/wiki
+```text
+PyMuPDF        >= 1.23.8
+pytesseract    >= 0.3.10
+Pillow         >= 10.1.0
+pydantic       >= 2.5.0
+click          >= 8.1.0
+python-dateutil>= 2.8.2
+openpyxl       >= 3.1.0
+pytest         >= 7.4.0
+streamlit      >= 1.30.0
 ```
 
-### Option 2: Using Docker (Recommended for Production)
+Keine weiteren Dependencies. Bitte vor Änderungen daran zuerst neue Wheels in den Offline-Cache legen lassen.
 
-```bash
-# Build the Docker image
-docker build -t redact-clinical-german .
+---
 
-# Run anonymization
-docker run -v $(pwd)/input:/input -v $(pwd)/output:/output \
-  redact-clinical-german /input/arztbrief.pdf --output /output/anonymized.pdf
-```
+## 🖥️ Web-UI (Streamlit)
 
-## 🚀 Quick Start
+Standard-Workflow auf dem Klinik-Rechner. Nach `streamlit run app.py`:
 
-### 🖥️ Web-UI (Streamlit) - Recommended for Batch Processing
+### Linker Sidebar-Bereich
+- **📁 Template auswählen** – Dropdown mit allen gespeicherten Templates aus `templates/`
+- **Bilder extrahieren** – Schaltet die OCR-Bild-Anonymisierung an/aus
+- **Debug-Logging aktivieren** – schreibt detaillierte Match-Informationen in die Konsole (`[MATCH FOUND]`, `[SKIP - BOUNDARY]`, `[ENTITY EXTRACTED]`, `Redacted header until keyword …`, …)
+- **🟣 Header bis Keyword** – Aktivieren + Trigger-Liste (eine Phrase pro Zeile). Schwärzt alles oberhalb des **obersten** Vorkommens eines beliebigen Triggers auf der Seite. Wird in der Vorschau magenta markiert.
+- **🚫 Blacklist (exakt)** – case-sensitive Wörter/Phrasen, die immer redaktiert werden (`UMG` schwärzt `UMG`, lässt `Umgeben` stehen)
+- **🗑️ Ergebnisse löschen** – wirft die anonymisierten PDFs der aktuellen Session aus dem Speicher und räumt das per-Session-Template auf
 
-**Option 1: Docker (Empfohlen)**
-```bash
-docker-compose up -d
-# Open browser at http://localhost:8501
-```
+### Hauptbereich
+1. PDFs per Drag & Drop hochladen
+2. **Vorschau** der ersten Seite mit den eingezeichneten Zonen:
+   - 🔵 Header Seite 1
+   - 🟠 Footer Seite 1
+   - 🟢 Footer Folgeseiten
+   - 🟣 Header bis Keyword (falls aktiv und ein Trigger gefunden wurde — andernfalls erscheint ein gelber Warnhinweis mit den gesuchten Triggern, damit man sofort sieht, welche Schreibweise nicht gefunden wurde)
+3. **🚀 Anonymisierung starten**: verarbeitet alle Uploads, lädt die anonymisierten PDFs in den Session-Speicher und löscht den Disk-Workspace sofort.
+4. Downloads:
+   - 📄 Einzel-PDF
+   - 📦 ZIP-Bundle (PDFs + extrahierte Bilder)
+   - 📊 Excel-Export (Spalten *Dokument*, *Text*) für nachgelagerte Auswertung
 
-**Option 2: Lokale Installation**
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-# Open browser at http://localhost:8501
-```
+---
 
-#### Web UI Features
+## 📝 Template-Editor
 
-- ✅ **Template auswählen** – Wählen Sie ein gespeichertes Template in der Sidebar
-- ✅ **Drag & Drop Upload** mehrerer PDFs
-- ✅ **Batch-Verarbeitung** mit Live-Progress
-- ✅ **Einzeldownload** jeder anonymisierten Datei
-- ✅ **ZIP-Download** aller Dateien auf einmal
-- ✅ **Excel-Download** – Anonymisierten Text aller Dokumente als `.xlsx` exportieren (Spalten: *Dokument*, *Text*)
-- ✅ **Blacklist (exakt)** – Sidebar-Textfeld für case-sensitive Wörter/Phrasen, die immer geschwärzt werden (z.B. `UMG` → redaktiert; `Umgeben` → bleibt erhalten)
-- ✅ **Statistiken** (Anzahl gefundener PII pro Datei)
+Streamlit-Seite **„📝 Template Editor"** (Sidebar > Pages). Erlaubt das pflegen wiederverwendbarer Konfigurationen.
 
-### 📝 Template Editor
+| Tab | Inhalt |
+|---|---|
+| **⚙️ Zonen-Konfiguration** | Pixelhöhen für Header (Seite 1), Header Folgeseiten, Footer (Seite 1 / Folgeseiten), Signaturblock, `Personal:`-Block. Plus „Header bis Keyword" mit Trigger-Liste. |
+| **🔍 PII-Pattern Aktivierung** | Toggle jeder Mustergruppe (Patient, Arzt, Anrede + Name, Adresse, PLZ, Klinik, Telefon, Fax, E-Mail, HK-Nummer, Schrittmacher-ID, …). |
+| **📋 Whitelist-Begriffe** | Medizinische / anatomische / Geräte-Begriffe, die nie redaktiert werden dürfen. |
+| **🚫 Blacklist (exakt)** | Case-sensitive Phrasen, die immer redaktiert werden — ergänzt die Sidebar-Eingabe. |
+| **🔍 Vorschau** | JSON-Live-Vorschau des aktuellen Templates. |
 
-Open the **Template Editor** page in the Streamlit sidebar to create and manage templates:
+Templates landen als JSON in `templates/`. Das Template `default.json` wird beim ersten Start automatisch angelegt.
 
-1. **Neues Template** – Click *🆕 Neu* to start with default values
-2. **Zonen konfigurieren** – Set pixel heights for header, footer, signature, and `Personal:` block
-3. **Whitelist bearbeiten** – Enter medical / anatomical / device terms that must not be redacted
-4. **Blacklist bearbeiten** – Enter exact, case-sensitive terms/phrases (one per line) that are always redacted (e.g. `UMG` → redacted; `Umgeben` → preserved)
-5. **Speichern** – Enter a name and click *💾 Template speichern*
-
-Templates are saved as JSON files in the `templates/` directory and are immediately available in the main anonymization page.
-
-#### Template JSON Format
+### Template-JSON-Format
 
 ```json
 {
@@ -119,10 +113,32 @@ Templates are saved as JSON files in the `templates/` directory and are immediat
   "created": "2026-02-25T10:30:00Z",
   "zones": {
     "header_page1": 380,
+    "header_next": 100,
     "footer_page1": 130,
     "footer_next": 110,
     "signature": 150,
     "personal": 100
+  },
+  "header_until_keyword": {
+    "enabled": true,
+    "triggers": [
+      "Sehr geehrte Kollegin",
+      "Sehr geehrter Kollege",
+      "Untersucher"
+    ]
+  },
+  "active_patterns": {
+    "patient_block": true,
+    "salutation_with_name": true,
+    "case_id": true,
+    "address": true,
+    "doctor_name": true,
+    "phone_landline": true,
+    "phone_mobile": true,
+    "email": true,
+    "fax": true,
+    "hk_number": true,
+    "pacemaker_id": true
   },
   "whitelist": {
     "medical": ["CT", "MRT", "Angiographie"],
@@ -133,401 +149,166 @@ Templates are saved as JSON files in the `templates/` directory and are immediat
 }
 ```
 
-| Field | Description |
+| Feld | Bedeutung |
 |---|---|
-| `zones.header_page1` | Height (px) of the redacted header block on page 1 |
-| `zones.footer_page1` | Height (px) of the redacted footer block on page 1 |
-| `zones.footer_next` | Height (px) of the redacted footer block on pages 2+ |
-| `zones.signature` | Height (px) of the block redacted after *"Mit freundlichen Grüßen"* |
-| `zones.personal` | Height (px) of the block redacted after the keyword *"Personal:"* |
-| `whitelist.medical` | Medical terms excluded from redaction |
-| `whitelist.anatomical` | Anatomical terms excluded from redaction |
-| `whitelist.devices` | Device / manufacturer names excluded from redaction |
-| `blacklist_exact` | Case-sensitive exact-match terms/phrases always redacted (whole-word match, no partial matches) |
+| `zones.header_page1` | Höhe der Header-Schwärzung auf Seite 1 (PDF-Punkte, oben gemessen) |
+| `zones.header_next` | Header-Höhe auf Seiten 2+ |
+| `zones.footer_page1` | Footer-Höhe Seite 1 (von unten gemessen) |
+| `zones.footer_next` | Footer-Höhe Seiten 2+ |
+| `zones.signature` | Höhe des Blocks nach „Mit freundlichen Grüßen" |
+| `zones.personal` | Höhe des Blocks nach Keyword „Personal:" |
+| `header_until_keyword.enabled` | Schwärzt alles oberhalb des obersten Trigger-Vorkommens |
+| `header_until_keyword.triggers` | Liste aller Phrasen, die als Trigger gelten — die oberste auf der Seite gewinnt |
+| `active_patterns` | Welche PII-Muster aktiv sind |
+| `whitelist.*` | Wörter/Phrasen, die nie geschwärzt werden |
+| `blacklist_exact` | Wörter/Phrasen, die immer geschwärzt werden (case-sensitive, ganze Wörter) |
 
-### Command Line Interface (CLI)
+---
 
-### Basic Usage
+## 🗺️ Zone-Koordinatensystem (PyMuPDF)
+
+PyMuPDF zählt y von oben:
+
+- `y = 0` ist die **Oberkante** der Seite
+- `y = page.rect.height` (A4 ≈ 842) ist die **Unterkante**
+
+Templates in der UI verwenden „Höhe in Pixeln" (= PDF-Punkte). Der Header ist immer ein Streifen vom oberen Rand abwärts; Footer-Werte sind ein Streifen von der Unterkante aufwärts. Die zur Laufzeit gebaute `custom_template.json` rechnet das in die nativen `y_start`/`y_end`-Felder um.
+
+---
+
+## 🩺 PII-Patterns
+
+Die ausgelieferten Patterns liegen in [`templates/german_clinical_default.json`](templates/german_clinical_default.json). Wichtigste Gruppen:
+
+| Gruppe | Beispiel-Match |
+|---|---|
+| `patient_block` | `Herr Müller, Max, *01.01.1960` |
+| `case_id` | `Pat.-Nr. 123456789`, `Fall-Nr.: 987654` |
+| `address` | `Hauptstraße 123, 37075 Göttingen` |
+| `doctor_name` | `Dr. med. Karl Müller`, `Prof. Dr. Schmidt` |
+| `doctor_name_parentheses` | `(PD Dr. Christoph Jensen)` |
+| `salutation_with_name` | `Herr Müller`, `Frau Schmidt-Bayer` |
+| `doctor_signature` (Kontext) | Arztname nach „Mit freundlichen Grüßen" |
+| `referring_doctor` (Kontext) | Arztname nach „Zuweiser:" |
+| `phone_landline` / `phone_mobile` / `phone_context` | `Tel.: 0561/937690`, `+49 173 1234567`, „unter 12345" |
+| `email`, `fax`, `hk_number` | wie zu erwarten |
+| `pacemaker_id` | `DR 268880`, `ICD 987654`, `CRT 456789` |
+
+Neue Patterns: in der JSON unter `structured_patterns` ergänzen → im Template-Editor unter „PII-Pattern Aktivierung" einen Toggle hinzufügen (`pages/1_📝_Template_Editor.py`, `_DEFAULT_PATTERNS`).
+
+---
+
+## 🖼️ Bild-Anonymisierung (OCR)
+
+Eingebettete Bilder werden mit Tesseract (deutsch) gescannt. Patterns aus `image_pii_patterns` im Template (Fall-Nr., Name, Geburtsdatum) lösen schwarze Rechtecke auf den Bild-Pixeln aus. Vom selben PDF werden die Bilder nur einmal extrahiert (Effizienz-Fix).
+
+---
+
+## ✂️ Cut-After-Keyword
+
+Im JSON unter `cut_after_keyword`:
+
+```json
+"cut_after_keyword": {
+  "enabled": true,
+  "trigger": "HÄMOSTASEOLOGIE Roche",
+  "redact_all_following_pages": true
+}
+```
+
+Schwärzt von 200pt über der Trigger-Zeile bis zum Seitenende **und** alle nachfolgenden Seiten komplett.
+
+---
+
+## ⌨️ CLI
+
+Sekundärer Aufruf — wenn man mal ein einzelnes PDF ohne UI verarbeiten will:
 
 ```bash
-# Anonymize a PDF with default settings
-python src/main.py input.pdf --output anonymized.pdf
-
-# Use custom template
 python src/main.py input.pdf --output anonymized.pdf \
-  --template templates/german_clinical_default.json
-
-# Extract and anonymize images
-python src/main.py input.pdf --output anonymized.pdf --extract-images
-
-# Specify date shift offset
-python src/main.py input.pdf --output anonymized.pdf --shift-days 15
-
-# Verbose output
-python src/main.py input.pdf --output anonymized.pdf --verbose
+  --template templates/german_clinical_default.json --extract-images --verbose
 ```
 
-### Example Output
+Optionen:
+- `--template / -t` – Pfad zur Template-JSON (Standard: `templates/german_clinical_default.json`)
+- `--output / -o` – Output-Pfad
+- `--extract-images` – Bilder extrahieren und mit OCR redigieren
+- `--verbose / -v` – Debug-Logging
 
-```
-2024-01-15 10:30:00 - INFO - Starting anonymization of: input.pdf
-2024-01-15 10:30:00 - INFO - Loading template: templates/german_clinical_default.json
-2024-01-15 10:30:00 - INFO - Loaded template: German-Clinical-Structured-v1 v1.0.0
-2024-01-15 10:30:00 - INFO - Date shifter initialized with offset: 12 days
-============================================================
-Anonymization completed successfully!
-============================================================
-Output PDF: anonymized.pdf
-Total pages processed: 3
-Zones redacted: 8
-PII entities found: 15
-Dates shifted: 7
-Images extracted: 2
-============================================================
-✓ Successfully anonymized input.pdf
-✓ Output saved to anonymized.pdf
-```
+---
 
-## 📋 Configuration
-
-### Rules Template Structure
-
-The anonymization behavior is controlled by JSON templates. See `templates/german_clinical_default.json` for the complete example.
-
-#### Zones Configuration
-
-```json
-{
-  "zones": {
-    "header": {
-      "page": 1,
-      "y_start": 0,
-      "y_end": 120,
-      "redaction": "full",
-      "preserve_logos": true
-    },
-    "footer": {
-      "pages": "all",
-      "y_start": 750,
-      "y_end": 842,
-      "redaction": "keyword_based",
-      "keywords": ["IBAN", "Bankverbindung", "Sparkasse"]
-    }
-  }
-}
-```
-
-#### Structured PII Patterns
-
-```json
-{
-  "structured_patterns": {
-    "patient_block": {
-      "pattern": "(Herr|Frau)\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+([A-ZÄÖÜ][a-zäöüß-]+),\\s+\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
-      "groups": {
-        "1": "SALUTATION",
-        "2": "LASTNAME",
-        "3": "FIRSTNAME",
-        "4": "BIRTHDATE"
-      }
-    },
-    "doctor_signature": {
-      "context_trigger": "Mit freundlichen Grüßen",
-      "pattern": "(Prof\\.|Dr\\.|PD)\\s+(med\\.\\s+)?([A-ZÄÖÜ][a-zäöüß-]+(?:\\s+[A-ZÄÖÜ][a-zäöüß-]+)+)",
-      "type": "DOCTOR_NAME",
-      "lookahead": 200
-    }
-  }
-}
-```
-
-### Creating Custom Templates
-
-1. Copy `templates/german_clinical_default.json` to a new file
-2. Modify zones, patterns, or date handling rules
-3. Use the custom template with `--template your_template.json`
-
-## 🏥 Example Patterns Recognized
-
-The system recognizes these structured patterns:
-
-### Patient Information
-- **Format**: `Herr Müller, Max, *01.01.1960`
-- **Extracted**: Salutation, Lastname, Firstname, Birthdate
-
-### Case Numbers
-- **Format**: `Pat.-Nr. 123456789` or `Pat-Nr.: 987654321`
-- **Extracted**: Case ID
-
-### Addresses
-- **Format**: `Hauptstraße 123, 37075 Göttingen`
-- **Extracted**: Complete address
-
-### Doctor Signatures
-- **Context**: After "Mit freundlichen Grüßen"
-- **Format**: `Prof. Dr. med. Karl Müller`
-- **Extracted**: Doctor name with title
-
-### Referring Doctors
-- **Context**: After "Zuweiser"
-- **Format**: `Dr. Schmidt`
-- **Extracted**: Referring doctor name
-
-## 🌍 Location and Medical Facility Anonymization (v2.0)
-
-### Context-Based City Detection
-
-The system recognizes German cities **ONLY** in specific contexts to avoid false positives:
-
-✅ **Recognized:**
-- After postal code: `"37075 Göttingen"` → `"37075 [ORT]"`
-- With prepositions: `"aus Darmstadt"` → `"aus [ORT]"`
-- At clinics: `"Universitätsklinikum Eppendorf"` → `"[KLINIK]"`
-- In referrals: `"überwiesen aus Einbeck"` → `"überwiesen aus [ORT]"`
-
-❌ **Ignored (No Context):**
-- `"Göttingen-Studie"` (technical term, not a location context)
-- `"Hamburger Klassifikation"` (medical classification)
-
-### Database
-
-- **~250 German cities** from major cities to smaller towns
-- **12+ major medical facilities** (university hospitals, MVZs)
-- **Blacklist support** for special cases (e.g., "UKE" without context)
-
-### Date-Handling
-
-**Birthdate Shifting (Automatic):**
-- Birthdate in format `*DD.MM.YYYY` is automatically shifted by a random offset
-- Example: `*01.01.1960` → `*15.01.1960` (shifted by +14 days)
-- Format is preserved after shifting
-
-**Treatment/Visit Dates (Manual Excel Workflow):**
-- Regular dates (without `*`) remain **unchanged** in the anonymized PDF
-- **Recommended workflow:**
-  1. ✅ Anonymize PDF (names, addresses removed; dates unchanged)
-  2. ✅ Copy text from PDF to Excel
-  3. ✅ Use provided VBA macro for date-shifting in Excel
-  4. ✅ This avoids visual artifacts and positioning issues in PDF
-
-**Why Excel instead of PDF shifting?**
-- ❌ PDF date-shifting can create white holes in headers/footers
-- ❌ Font and positioning problems
-- ❌ Incomplete pattern matches (e.g., "05.08" without year)
-- ✅ Excel offers reliable text replacement without visual artifacts
-
-### Excel Date-Shifting Macro
-
-For shifting treatment dates after PDF anonymization:
-
-1. **Copy** text from anonymized PDF to Excel
-2. **Save** Excel file as `.xlsm` (macro-enabled)
-3. **Install** VBA macro from `docs/excel_date_shifter.vba`
-4. **Configure** shift offset (e.g., `SHIFT_DAYS = 15`)
-5. **Select** cells with dates and run macro (Alt + F8)
-
-**Supported date formats in Excel macro:**
-- `21.08.2023` → Full dates (DD.MM.YYYY)
-- `vom 05.08` → Short dates (DD.MM)
-- `5. November 2023` → German month names (full)
-- `5. Nov. 2023` → German month names (abbreviated)
-
-**Complete guide:** See [docs/excel_date_shifting_guide.md](docs/excel_date_shifting_guide.md)
-
-**VBA code:** [docs/excel_date_shifter.vba](docs/excel_date_shifter.vba)
-
-### Configuration
-
-In `templates/german_clinical_default.json`:
-
-```json
-{
-  "location_anonymization": {
-    "enabled": true,
-    "location_blacklist": [
-      "UKE",
-      "Charité",
-      "Northeim",
-      "Eppendorf"
-    ],
-    "replacement": "[ORT]",
-    "facility_replacement": "[KLINIK]"
-  },
-  "date_handling": {
-    "enabled": true,
-    "shift_days_range": [-30, 30],
-    "german_months": {
-      "full": ["Januar", "Februar", "März", ...],
-      "abbreviated": ["Jan", "Feb", "Mär", ...]
-    }
-  }
-}
-```
-
-### Priority System
-
-When multiple contexts match:
-1. **Blacklist** (highest priority) - always recognized
-2. **Postal code context** - "37075 Göttingen"
-3. **Preposition context** - "aus Darmstadt"
-4. **Medical facility context** - "Klinikum Hamburg"
-5. **Referral context** - "überwiesen aus..."
-
-
-## 🧪 Testing
+## 🧪 Tests
 
 ```bash
-# Run all tests
 pytest tests/ -v
-
-# Run specific test file
-pytest tests/test_pii_extractor.py -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
 ```
 
-### Test Coverage
+Abdeckung u. a.:
+- Pattern-Matches (Patient-Block, Arztname, PLZ, Adresse, Kontakt, HK-Nummer, Schrittmacher)
+- Whitespace-Normalisierung
+- Whitelist + Blacklist
+- Zone-Schwärzung inkl. `exclude_page`
+- Cut-After-Keyword
+- Template-Laden + Pydantic-Validierung
+- Excel-Export
 
-- ✅ Date shifting consistency
-- ✅ German month name parsing and shifting
-- ✅ PII extraction with German umlauts
-- ✅ Context-based location detection
-- ✅ Medical facility recognition
-- ✅ Zone-based redaction
-- ✅ Context-triggered extraction
-- ✅ Image anonymization
-- ✅ Multi-group pattern matching
+**Hinweis für Klinik-Rollouts:** Tests und ihre Source-Dateien gehören zusammen — siehe oben.
 
-## 🐳 Docker Deployment
+---
 
-### Building for Production
-
-```bash
-# Build the image
-docker build -t redact-clinical-german:latest .
-
-# Tag for registry
-docker tag redact-clinical-german:latest your-registry/redact-clinical-german:1.0.0
-
-# Push to registry
-docker push your-registry/redact-clinical-german:1.0.0
-```
-
-### Windows Deployment
-
-```powershell
-# Using Docker Desktop on Windows
-docker build -t redact-clinical-german .
-
-# Run with Windows paths
-docker run -v C:\Users\YourName\Documents\input:/input -v C:\Users\YourName\Documents\output:/output redact-clinical-german /input/arztbrief.pdf --output /output/anonymized.pdf
-```
-
-### Alternative: PyInstaller Executable (Windows)
-
-```bash
-# Install PyInstaller
-pip install pyinstaller
-
-# Create standalone executable
-pyinstaller --onefile --name redact-clinical src/main.py
-
-# Executable will be in dist/redact-clinical.exe
-```
-
-## 📊 Performance
-
-- **Processing Speed**: ~1-2 pages/second (depends on image count)
-- **Memory Usage**: ~100-200 MB per document
-- **Tesseract OCR**: ~500ms per image
-
-## 🔒 Privacy & Security
-
-- **Local Processing**: All processing happens locally, no cloud services
-- **No Data Retention**: No caching or logging of PII
-- **Deterministic Shifting**: Same input always produces same output (with fixed seed)
-- **Docker Isolation**: Complete isolation when using Docker
-
-## 🛠️ Development
-
-### Project Structure
+## 🗂️ Projektstruktur
 
 ```
 redact-clinical-german/
+├── app.py                              # Streamlit-Einstiegspunkt
+├── pages/
+│   └── 1_📝_Template_Editor.py         # Template-Editor-Seite
+├── config/
+│   └── template_manager.py             # Laden/Speichern der templates/*.json
 ├── src/
-│   ├── __init__.py
-│   ├── main.py                    # CLI Entry Point
-│   ├── zone_anonymizer.py         # Zone-based PDF anonymization
-│   ├── image_extractor.py         # Image extraction
-│   ├── image_anonymizer.py        # OCR + image anonymization
-│   ├── pii_extractor.py           # Structured PII extraction
-│   ├── date_shifter.py            # Consistent date shifting
-│   └── config.py                  # Pydantic config models
+│   ├── main.py                         # CLI + Python-API
+│   ├── zone_anonymizer.py              # Zonen + PII-Redaktion + Header-Trigger
+│   ├── pii_extractor.py                # Regex-basierte PII-Extraktion
+│   ├── image_extractor.py              # Bild-Extraktion aus PDF
+│   ├── image_anonymizer.py             # OCR + Bild-Schwärzung
+│   ├── excel_exporter.py               # XLSX-Export des anonymisierten Texts
+│   └── config.py                       # Pydantic-Modelle
 ├── templates/
-│   └── german_clinical_default.json  # Default rules template
+│   ├── german_clinical_default.json    # Basis-Template mit allen Patterns + Zonen
+│   ├── default.json                    # User-Template, automatisch erzeugt
+│   └── TEMPLATE_DOCUMENTATION.md       # JSON-Felder-Referenz
+├── docs/
+│   ├── excel_date_shifter.vba          # Optional: Excel-Makro für Datums-Shift
+│   └── excel_date_shifting_guide.md
 ├── tests/
-│   ├── test_zone_anonymizer.py
-│   ├── test_pii_extractor.py
-│   ├── test_date_shifter.py
-│   └── test_image_anonymizer.py
-├── Dockerfile
-├── requirements.txt
-├── pyproject.toml
+├── requirements.txt                    # Pakete-Whitelist (Offline-Install!)
 └── README.md
 ```
 
-### Adding New Patterns
+---
 
-1. Edit `templates/german_clinical_default.json`
-2. Add pattern to `structured_patterns` section
-3. Test with sample documents
-4. Add unit tests to `tests/test_pii_extractor.py`
+## 🔐 Datenschutz
+
+- **Komplett lokal**: kein Cloud-Aufruf, keine Telemetrie.
+- **Kein Caching von PII**: Temp-Verzeichnisse werden direkt nach jedem Lauf entfernt; anonymisierte Daten leben nur im Streamlit-Session-Speicher bis du „Ergebnisse löschen" klickst oder den Browser-Tab schließt.
+- **Manuelle Nachkontrolle** bleibt Pflicht — Regex erfasst nicht jedes Korner-Case (selten geschriebene Namen, gescannte Bilder ohne OCR-Treffer).
+
+---
 
 ## ❓ FAQ
 
-### Why not use spaCy or Stanza for NER?
+**Warum kein NER?** NER-Modelle markieren medizinische Begriffe (Krankheiten, Medikamente) regelmäßig als Entitäten. Whitelisten für Tausende Fachbegriffe ist nicht praktikabel. Kontextuelle Regex ist präziser.
 
-NER models are trained on general text and flag medical terms as entities. Maintaining a whitelist of thousands of medical terms is impractical and error-prone. Contextual extraction is more precise.
+**Was passiert, wenn ein Patientenname auch im Befundtext steht?** Nur der eigentliche Treffer (z. B. der Name im Patient-Block) wird geschwärzt. Andere Vorkommen bleiben unangetastet, weil PII-Positionen aus dem Page-Wort-Index abgeleitet werden statt per `page.search_for`.
 
-### How accurate is the system?
+**Header bis Keyword greift nicht — was tun?** Im Sidebar „Debug-Logging aktivieren" und in der Konsole nach `Redacted header until keyword 'X' at y=…` bzw. `header_until_keyword: no trigger from […] found on page` suchen. Der gelbe Warn-Hinweis in der UI listet außerdem alle gesuchten Trigger. Häufige Ursachen: Doppelpunkt/Leerzeichen anders geschrieben („Untersucher" vs. „Untersucher:"), oder das PDF benutzt Non-Breaking-Spaces zwischen Wörtern — letzteres wird seit der robusten Token-Suche aber abgefangen.
 
-- **Precision**: >99% (very few false positives due to contextual matching)
-- **Recall**: ~95% (might miss PII in unexpected formats)
+**Wie passe ich Pattern an?** [`templates/german_clinical_default.json`](templates/german_clinical_default.json) editieren, Pattern unter `structured_patterns` ergänzen, in `pages/1_📝_Template_Editor.py:_DEFAULT_PATTERNS` denselben Namen aufnehmen und einen Checkbox-Eintrag im passenden Tab anlegen.
 
-### Can I use this for non-German documents?
+**Date-Shifting?** Wird in dieser Version **nicht** mehr automatisch im PDF gemacht (es entstand sonst weiße Lücken im Layout). Für die Excel-basierte Nachverarbeitung der Behandlungs-Daten gibt es weiterhin das VBA-Makro unter [`docs/excel_date_shifter.vba`](docs/excel_date_shifter.vba) mit Anleitung in [`docs/excel_date_shifting_guide.md`](docs/excel_date_shifting_guide.md).
 
-The system is optimized for German clinical documents. For other languages, you would need to:
-1. Adjust regex patterns for the language
-2. Update Tesseract language (`lang='deu'` → `lang='eng'`)
-3. Modify name/address patterns
+---
 
-### What about GDPR compliance?
+## 📜 Lizenz
 
-This tool helps with GDPR compliance by anonymizing PII, but you should:
-- Review output documents manually
-- Implement proper access controls
-- Document your anonymization process
-- Consider data minimization principles
-
-## 📝 License
-
-[Add your license here]
-
-## 🤝 Contributing
-
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
-
-## 📧 Contact
-
-For questions or issues, please open a GitHub issue.
-
-## 🙏 Acknowledgments
-
-- PyMuPDF for excellent PDF manipulation
-- Tesseract OCR for image text recognition
-- Click for the CLI framework
+Bitte projektintern klären.

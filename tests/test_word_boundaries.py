@@ -144,33 +144,33 @@ class TestHeaderFooterCoordinates:
     """Test that template has correct zone coordinates."""
     
     def test_header_footer_coordinates(self):
-        """Test that template has correct zone coordinates."""
+        """Test that template has correct zone coordinates.
+
+        PyMuPDF coordinate system: y=0 is TOP, y=842 is BOTTOM on A4.
+        """
         with open('templates/german_clinical_default.json', 'r', encoding='utf-8') as f:
             template = json.load(f)
-        
-        # Header Seite 1 (at top of page)
-        assert 'header_page_1' in template['zones']
+
+        # Header page 1: top strip
         header = template['zones']['header_page_1']
-        assert header['y_start'] == 562, "Header should start at y=562 (top of page - 280px)"
-        assert header['y_end'] == 842, "Header should end at y=842 (top of page)"
+        assert header['y_start'] == 0, "Header starts at top (y=0)"
+        assert header['y_end'] == 280, "Header is 280pt high"
         assert header['page'] == 1
-        assert header['preserve_logos'] is False, "Logo preservation should be disabled"
-        
-        # Footer Seite 1 (at bottom of page)
-        assert 'footer_page_1' in template['zones']
+        assert header['preserve_logos'] is False
+
+        # Footer page 1: bottom strip
         footer1 = template['zones']['footer_page_1']
-        assert footer1['y_start'] == 0, "Footer should start at y=0 (bottom of page)"
-        assert footer1['y_end'] == 35, "Footer should end at y=35 (35px high)"
+        assert footer1['y_end'] == 842, "Footer ends at bottom of page"
+        assert footer1['y_end'] - footer1['y_start'] == 35, "Footer is 35pt high"
         assert footer1['page'] == 1
-        assert footer1['redaction'] == 'full', "Footer should have full redaction"
-        
-        # Footer andere Seiten (at bottom of page)
-        assert 'footer_other_pages' in template['zones']
+        assert footer1['redaction'] == 'full'
+
+        # Footer pages 2+: bottom strip, taller
         footer_other = template['zones']['footer_other_pages']
-        assert footer_other['y_start'] == 0, "Footer should start at y=0 (bottom of page)"
-        assert footer_other['y_end'] == 80, "Footer should end at y=80 (80px high)"
-        assert footer_other['exclude_page'] == 1, "Should exclude page 1"
-        assert footer_other['pages'] == 'all', "Should apply to all pages"
+        assert footer_other['y_end'] == 842
+        assert footer_other['y_end'] - footer_other['y_start'] == 80
+        assert footer_other['exclude_page'] == 1
+        assert footer_other['pages'] == 'all'
 
 
 class TestWhitelistFramework:

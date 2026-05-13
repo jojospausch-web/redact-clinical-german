@@ -5,26 +5,29 @@
     "header_page_1": {
       "page": 1,
       "pages": null,
-      "y_start": 562,
-      "y_end": 842,
+      "y_start": 0,
+      "y_end": 280,
       "redaction": "full",
-      "preserve_logos": false
+      "preserve_logos": false,
+      "comment": "PyMuPDF coordinate system: y=0 is TOP of page. Header covers top 280pt of A4 (842pt total)."
     },
     "footer_page_1": {
       "page": 1,
       "pages": null,
-      "y_start": 0,
-      "y_end": 35,
+      "y_start": 807,
+      "y_end": 842,
       "redaction": "full",
-      "keywords": []
+      "keywords": [],
+      "comment": "Bottom 35pt strip on page 1 (842-35=807)."
     },
     "footer_other_pages": {
       "page": null,
       "pages": "all",
       "exclude_page": 1,
-      "y_start": 0,
-      "y_end": 80,
-      "redaction": "full"
+      "y_start": 762,
+      "y_end": 842,
+      "redaction": "full",
+      "comment": "Bottom 80pt strip on pages 2+ (842-80=762)."
     }
   },
   "structured_patterns": {
@@ -162,56 +165,6 @@
         "2": "CITY"
       },
       "comment": "Medical facility + city: requires city token ≥3 letters (uppercase + 2+ lowercase via {2,}) and excludes short prepositions/articles (für, und, am, an, im, in, ob, zu, bei, vom, von, der, des, die, das) from being matched as the city name. Note: the inner (?:am|an|der|im|in|ob) allows compound city names like 'Frankfurt am Main' and serves a different purpose than the leading negative lookahead exclusion list."
-    }
-  },
-  "location_anonymization": {
-    "enabled": true,
-    "city_database": "data/cities_de.txt",
-    "facilities_database": "data/medical_facilities_de.json",
-    "context_triggers": {
-      "prepositions": [
-        "in",
-        "aus",
-        "nach",
-        "von",
-        "bei"
-      ],
-      "facility_keywords": [
-        "Universitätsklinikum",
-        "Uniklinik",
-        "Klinikum",
-        "Krankenhaus",
-        "Herzzentrum",
-        "Tumorzentrum",
-        "Lungenzentrum",
-        "MVZ",
-        "Charité",
-        "Medizinisches Versorgungszentrum",
-        "Ambulanzzentrum",
-        "Rehabilitationszentrum",
-        "Reha-Zentrum",
-        "Rehaklinik"
-      ],
-      "referral_keywords": [
-        "überwiesen",
-        "Zuweiser",
-        "eingewiesen",
-        "verlegt"
-      ]
-    },
-    "location_blacklist": [
-      "UKE",
-      "Charité",
-      "Northeim",
-      "Eppendorf"
-    ],
-    "replacement": "[ORT]",
-    "facility_replacement": "[KLINIK]"
-  },
-  "date_handling": {
-    "birthdate": {
-      "pattern": "\\*(\\d{2}\\.\\d{2}\\.\\d{4})",
-      "action": "remove"
     }
   },
   "pii_mechanisms": {
