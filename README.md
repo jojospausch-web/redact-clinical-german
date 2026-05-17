@@ -88,6 +88,75 @@ Standard-Workflow auf dem Klinik-Rechner. Nach `streamlit run app.py`:
    - 📄 Einzel-PDF
    - 📦 ZIP-Bundle (PDFs + extrahierte Bilder)
    - 📊 Excel-Export (Spalten *Dokument*, *Text*) für nachgelagerte Auswertung
+     *(deaktiviert, wenn Date-Shift aktiv — sonst Inkonsistenz zwischen PDF und Excel)*
+
+---
+
+## 📅 Date-Shift
+
+Sidebar-Toggle **„📅 Date-Shift aktivieren"** (Default: aus). Wenn aktiv,
+verschiebt das Tool nach der PII-Redaktion die im Brief gefundenen Datums-
+angaben direkt im PDF nach festen Regeln.
+
+### Regel-Auswahl (basierend auf dem Aufnahmedatum)
+
+Das Aufnahmedatum wird aus einem Muster wie `vom 05.08. bis zum 21.08.2023`
+extrahiert. Wenn das erste Datum kein Jahr trägt, wird das Jahr aus dem
+zweiten Datum übernommen.
+
+| Aufnahme-Tag | Aufnahme-Monat | Standalone `YYYY` im Text | Modus              | Verhalten |
+|--------------|----------------|----------------------------|--------------------|-----------|
+| 27 – 31      | beliebig       | egal                       | `monthend`         | **kein** Shift, alle Daten 🔴 |
+| 01 – 26      | Sep – Dez (9–12)| ja                        | `shift_year_leak`  | Daten geshiftet 🟡, alleinstehende Jahreszahlen 🔴 |
+| 01 – 26      | Sep – Dez       | nein                      | `shift_safe`       | Alles geshiftet 🟡 |
+| 01 – 26      | Jan – Aug (1–8) | egal                      | `shift_safe`       | Alles geshiftet 🟡 |
+| (kein `vom…bis…` gefunden)                                  | `no_stay`          | **kein** Shift, alle Daten 🔴 |
+
+### Shift-Größen
+
+| Format-Beispiel | Shift |
+|---|---|
+| `DD.MM.YYYY` (z.B. `05.08.2023`) | +120 Tage |
+| `DD.MM` ohne Jahr im `vom…bis…`-Kontext (z.B. `05.08`) | +120 Tage, Output ohne Jahr (Format bleibt erhalten) |
+| `D. Monatsname YYYY` (z.B. `5. November 2023`) | +120 Tage |
+| `D. Mon. YYYY` (z.B. `5. Nov. 2023`) | +120 Tage |
+| `MM.YYYY` (z.B. `11.2023`) | **+4 Monate** (Sep–Dez rollen ins Folgejahr) |
+| `MM/YYYY` (z.B. `11/2023`) | +4 Monate |
+| `MM/YY` (z.B. `11/23`, nur Jahre 20–39 = 2020–2039) | +4 Monate |
+| Geburtsdaten (`geb. …`, `*…`, `geboren am …`) | **kein** Shift, 🔴 markiert |
+| Alleinstehende `YYYY` im `shift_year_leak`-Fall (z.B. `seit 2019`) | **kein** Shift, 🔴 markiert |
+
+### Markierung im PDF
+
+- 🟡 **Gelbe Highlight-Annotation** auf jedem geshifteten Datum
+- 🔴 **Rote Highlight-Annotation** auf jedem nicht-geshifteten Datum, plus alleinstehende `YYYY` im Year-Leak-Fall, plus Geburtsdaten
+- Annotations-Tooltip enthält den Grund („Geburtsdatum — nicht verschoben", „+120 Tage", „Alleinstehende Jahreszahl — bitte prüfen", …)
+
+Beim manuellen Sichten kannst du in Acrobat / PDF-Viewer die Anmerkungen über das Hand-Werkzeug einsehen oder einzeln löschen, sobald du sie geprüft hast.
+
+### Was passiert mit dem Excel-Export?
+
+Wenn Date-Shift aktiv ist, wird der Excel-Export-Button **ausgeblendet** —
+ansonsten würde Excel den geshifteten Text ohne die farbigen Markierungen
+enthalten und ein Doppelversionierungs-Chaos bringen.
+
+### Blutdruck-Schutz
+
+Slash-Formate wie `120/80 mmHg`, `10/80` mit Indikatoren wie „RR", „mmHg",
+„Blutdruck", „/min", „Puls" im selben Satz werden **nicht** als Datum
+interpretiert. Sätze sind durch `\n`, `. ` oder `; ` getrennt.
+
+### Verbleibende Risiken
+
+- **Font-Mismatch**: PyMuPDF rendert den Ersatztext in Helvetica. Bei
+  Briefen in z. B. Calibri/Arial fällt der Wechsel meist bei Ziffern nicht
+  auf, kann aber bei deutschen Monatsnamen sichtbar sein.
+- **Längenänderung**: `5.8.2023` → `5.12.2023` wird ein Zeichen länger.
+  PyMuPDF zentriert den Ersatz; visuell entsteht im Schlimmstfall ein
+  leicht engerer Buchstabenabstand. Die gelbe Markierung hilft beim
+  Sichten.
+- **Nicht erkannte Formate** (etwa „im Sommer 2023", „letzte Woche")
+  werden nicht angefasst — manuelle Nachkontrolle bleibt Pflicht.
 
 ---
 
@@ -305,7 +374,7 @@ redact-clinical-german/
 
 **Wie passe ich Pattern an?** [`templates/german_clinical_default.json`](templates/german_clinical_default.json) editieren, Pattern unter `structured_patterns` ergänzen, in `pages/1_📝_Template_Editor.py:_DEFAULT_PATTERNS` denselben Namen aufnehmen und einen Checkbox-Eintrag im passenden Tab anlegen.
 
-**Date-Shifting?** Wird in dieser Version **nicht** mehr automatisch im PDF gemacht (es entstand sonst weiße Lücken im Layout). Für die Excel-basierte Nachverarbeitung der Behandlungs-Daten gibt es weiterhin das VBA-Makro unter [`docs/excel_date_shifter.vba`](docs/excel_date_shifter.vba) mit Anleitung in [`docs/excel_date_shifting_guide.md`](docs/excel_date_shifting_guide.md).
+**Date-Shifting?** Optional einschaltbar über den Sidebar-Toggle „📅 Date-Shift aktivieren". Verschiebt Datumsangaben direkt im PDF nach festen Regeln (+120 Tage / +4 Monate), markiert geshiftete Daten **gelb**, nicht-geshiftete **rot**. Details im Abschnitt „📅 Date-Shift" weiter oben. Wer den alten Excel-Workflow weiter nutzen will: [`docs/excel_date_shifter.vba`](docs/excel_date_shifter.vba) + [`docs/excel_date_shifting_guide.md`](docs/excel_date_shifting_guide.md) liegen weiterhin im Repo.
 
 ---
 

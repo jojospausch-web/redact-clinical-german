@@ -423,6 +423,23 @@ with st.sidebar:
         help="Bilder separat speichern und anonymisieren"
     )
 
+    date_shift_enabled = st.checkbox(
+        "📅 Date-Shift aktivieren",
+        value=False,
+        help=(
+            "Verschiebt Datumsangaben um +120 Tage (Volldaten) bzw. +4 Monate "
+            "(MM.YYYY / MM/YYYY / MM/YY) nach festen Regeln (siehe README). "
+            "Geshiftete Daten werden GELB markiert, nicht-geshiftete (Tag ≥27, "
+            "Aufenthalt nicht erkannt, Geburtsdaten, alleinstehende Jahreszahlen "
+            "im Sep–Dez-Year-Leak-Fall) ROT. Bei aktivem Date-Shift entfällt der "
+            "Excel-Export, weil verschobenes PDF und unverschobener Text sonst "
+            "inkonsistent wären."
+        ),
+        key="sb_date_shift",
+    )
+    if date_shift_enabled:
+        st.caption("🟡 verschoben · 🔴 unverändert (manuell prüfen)")
+
     st.divider()
 
     # ── Debug mode ────────────────────────────────────────────────────────────
@@ -663,7 +680,8 @@ if uploaded_files:
                         input_path=str(temp_input),
                         template_path=str(temp_template_path),
                         output_path=str(temp_output),
-                        extract_images=extract_images
+                        extract_images=extract_images,
+                        date_shift_enabled=date_shift_enabled,
                     )
                 except Exception as e:
                     logger.error(f"Error processing {uploaded_file.name}: {e}")
@@ -750,31 +768,41 @@ if 'results' in st.session_state and st.session_state['results']:
         mime="application/zip"
     )
 
-    # Excel download: extract anonymized text from each PDF and bundle into XLSX
-    st.subheader("📊 Anonymisierte Texte als Excel herunterladen")
-    excel_results = []
-    for result in st.session_state['results']:
-        try:
-            anon_text = extract_text_from_pdf(result['pdf_bytes'])
-        except Exception as exc:
-            logger.warning(
-                "Excel export: failed to extract text from '%s': %s",
-                result['original_name'],
-                exc,
-            )
-            anon_text = ""
-        excel_results.append({
-            "document": result['original_name'],
-            "text": anon_text,
-        })
-    excel_buffer = io.BytesIO()
-    export_to_excel(excel_results, excel_buffer)
-    st.download_button(
-        label="📊 Anonymisierte Texte (Excel)",
-        data=excel_buffer.getvalue(),
-        file_name="anonymized_texts.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    # Excel download — only when Date-Shift is OFF. When dates have been
+    # shifted in the PDFs, extracting their text back into a single Excel
+    # column would mix shifted and non-shifted lines (the highlights and
+    # annotations don't carry through text extraction), so we suppress it.
+    if not date_shift_enabled:
+        st.subheader("📊 Anonymisierte Texte als Excel herunterladen")
+        excel_results = []
+        for result in st.session_state['results']:
+            try:
+                anon_text = extract_text_from_pdf(result['pdf_bytes'])
+            except Exception as exc:
+                logger.warning(
+                    "Excel export: failed to extract text from '%s': %s",
+                    result['original_name'],
+                    exc,
+                )
+                anon_text = ""
+            excel_results.append({
+                "document": result['original_name'],
+                "text": anon_text,
+            })
+        excel_buffer = io.BytesIO()
+        export_to_excel(excel_results, excel_buffer)
+        st.download_button(
+            label="📊 Anonymisierte Texte (Excel)",
+            data=excel_buffer.getvalue(),
+            file_name="anonymized_texts.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info(
+            "📊 Excel-Export ist deaktiviert, weil Date-Shift aktiv war. "
+            "Bei verschobenen Daten würde die Excel-Spalte die geshifteten Werte "
+            "ohne die farbigen Markierungen enthalten — das wäre irreführend."
+        )
 
     # ── Debug summary (shown when debug mode is active) ───────────────────────
     if debug_mode:

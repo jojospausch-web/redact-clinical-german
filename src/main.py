@@ -74,7 +74,8 @@ def anonymize_pdf(
     input_path: str,
     template_path: str = "templates/german_clinical_default.json",
     output_path: str = None,
-    extract_images: bool = True
+    extract_images: bool = True,
+    date_shift_enabled: bool = False,
 ) -> dict:
     """
     Python API for anonymizing PDFs (used by Streamlit and other integrations).
@@ -84,6 +85,8 @@ def anonymize_pdf(
         template_path: Path to anonymization template JSON
         output_path: Path for output PDF (auto-generated if None)
         extract_images: Whether to extract and anonymize images
+        date_shift_enabled: Run rule-based date-shifting after PII redaction.
+            See `src/date_shifter.py` for the rules.
     
     Returns:
         dict with:
@@ -108,7 +111,7 @@ def anonymize_pdf(
     logger.info(f"Loaded template: {config.template_name} v{config.version}")
     
     # Initialize anonymizer
-    anonymizer = ZoneBasedAnonymizer(config)
+    anonymizer = ZoneBasedAnonymizer(config, date_shift_enabled=date_shift_enabled)
     
     # Determine image extraction path
     extract_images_path = None
@@ -174,11 +177,16 @@ def anonymize_pdf(
     help='Extract images to separate folder'
 )
 @click.option(
+    '--date-shift',
+    is_flag=True,
+    help='Verschiebe Daten nach festen Regeln (+120 Tage / +4 Monate), siehe src/date_shifter.py'
+)
+@click.option(
     '--verbose', '-v',
     is_flag=True,
     help='Enable verbose logging'
 )
-def anonymize(input_pdf, output, template, extract_images, verbose):
+def anonymize(input_pdf, output, template, extract_images, date_shift, verbose):
     """Anonymize German medical doctor letters (Arztbriefe).
 
     This tool uses a zone-based approach with structured PII extraction
@@ -195,7 +203,8 @@ def anonymize(input_pdf, output, template, extract_images, verbose):
             input_path=input_pdf,
             template_path=template,
             output_path=output,
-            extract_images=extract_images
+            extract_images=extract_images,
+            date_shift_enabled=date_shift,
         )
         
         click.echo(f"✓ Successfully anonymized {input_pdf}")
