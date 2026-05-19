@@ -77,7 +77,34 @@ RE_STAY_RANGE = re.compile(
     re.IGNORECASE,
 )
 
-# MM.YYYY  (Monat + Jahr)
+# Aufenthalts-Range mit deutschen Monatsnamen:
+# "vom 5. November (2023)? bis (zum)? 21. November 2023"
+RE_STAY_RANGE_GERMAN = re.compile(
+    r'\b(?:vom|zwischen)\s+'
+    r'(\d{1,2})\.\s+(' + _MONTH_NAMES_RE + r')\.?(?:\s+(\d{4}))?\s+'
+    r'(?:bis(?:\s+zum)?|und)\s+'
+    r'(\d{1,2})\.\s+(' + _MONTH_NAMES_RE + r')\.?\s+(\d{4})\b',
+    re.IGNORECASE,
+)
+
+# Monatsname + Jahr OHNE Tag ("Januar 2024", "Nov. 2023")
+RE_MONTH_NAME_YEAR = re.compile(
+    r'\b(' + _MONTH_NAMES_RE + r')\.?\s+(\d{4})\b',
+    re.IGNORECASE,
+)
+
+# Standalone Monatsname mit Kontext-Indikator (kein Jahr danach).
+# Schützt vor False-Positives wie "Juli Schmidt" (Name).
+_STANDALONE_MONTH_CONTEXT = (
+    r'(?:seit|ab|im|in|von|bis|vom|nach|vor|zum|am|'
+    r'Mitte|Anfang|Ende|Beginn)'
+)
+RE_STANDALONE_MONTH = re.compile(
+    r'\b' + _STANDALONE_MONTH_CONTEXT + r'\s+(' + _MONTH_NAMES_RE + r')\b',
+    re.IGNORECASE,
+)
+
+# MM.YYYY  (Monat + Jahr, numerisch)
 RE_MM_YYYY_DOT = re.compile(r'\b(\d{1,2})\.(\d{4})\b')
 
 # MM/YYYY oder MM/YY
@@ -108,11 +135,14 @@ class DateHit:
     start: int                # Char-Offset im normalisierten Text
     end: int
     raw_text: str             # Originaler Substring
-    kind: str                 # 'full' | 'german' | 'month_year' | 'standalone_yyyy'
+    kind: str                 # 'full' | 'german' | 'month_year' |
+                              # 'month_only' | 'standalone_yyyy'
     parsed: Optional[date] = None   # für full/german
-    month: Optional[int] = None     # für month_year
+    month: Optional[int] = None     # für month_year, month_only
     year: Optional[int] = None      # für month_year und standalone_yyyy
-    fmt: Optional[str] = None       # Output-Format-Hint für month_year
+    fmt: Optional[str] = None       # Output-Format-Hint
+                                    # ('MM.YYYY', 'MM/YYYY', 'MM/YY',
+                                    #  'MONTH_NAME_YEAR', 'MONTH_NAME_ONLY')
     is_birthdate: bool = False
 
 
@@ -236,7 +266,51 @@ def detect_dates(text: str) -> List[DateHit]:
                 is_birthdate=False,
             ))
 
-    # 2) Deutsche Monatsnamen
+    # 1c) "vom 5. November (2023)? bis 21. November 2023" — analog für
+    # deutsche Monatsnamen.
+    for m in RE_STAY_RANGE_GERMAN.finditer(text):
+        d1 = int(m.group(1))
+        mo1_name = m.group(2)
+        y1 = m.group(3)
+        d2 = int(m.group(4))
+        mo2_name = m.group(5)
+        y2 = m.group(6)
+        mo1 = _GERMAN_MONTH_TO_NUM.get(mo1_name.lower())
+        mo2 = _GERMAN_MONTH_TO_NUM.get(mo2_name.lower())
+        if mo1 is None or mo2 is None:
+            continue
+        year_str = y1 or y2
+        if not year_str:
+            continue
+        year = int(year_str)
+        try:
+            parsed1 = date(year, mo1, d1)
+        except ValueError:
+            parsed1 = None
+        try:
+            parsed2 = date(year, mo2, d2)
+        except ValueError:
+            parsed2 = None
+        for parsed_, gi in [(parsed1, 1), (parsed2, 4)]:
+            if parsed_ is None:
+                continue
+            raw_start = m.start(gi)
+            # End-Offset: bei "D. Monat" ohne Jahr bis nach dem Monatsnamen,
+            # bei "D. Monat YYYY" bis nach dem Jahr
+            year_group = gi + 2
+            has_year = m.group(year_group) is not None
+            raw_end = m.end(year_group) if has_year else m.end(gi + 1)
+            if _overlaps_any(raw_start, raw_end, hits):
+                continue
+            hits.append(DateHit(
+                start=raw_start, end=raw_end,
+                raw_text=text[raw_start:raw_end],
+                kind="german",
+                parsed=parsed_,
+                is_birthdate=False,
+            ))
+
+    # 2) Deutsche Monatsnamen (mit Tag UND Jahr: "5. November 2023")
     for m in RE_GERMAN_DATE.finditer(text):
         d_ = int(m.group(1))
         mo_name = m.group(2)
@@ -310,7 +384,44 @@ def detect_dates(text: str) -> List[DateHit]:
             is_birthdate=_is_birthdate_context(text, m.start()),
         ))
 
-    # 5) Alleinstehende Jahreszahl
+    # 5) Monatsname + Jahr ohne Tag ("Januar 2024", "Nov. 2023")
+    for m in RE_MONTH_NAME_YEAR.finditer(text):
+        mo_name = m.group(1)
+        y_ = int(m.group(2))
+        mo_ = _GERMAN_MONTH_TO_NUM.get(mo_name.lower())
+        if mo_ is None or not (1950 <= y_ <= 2039):
+            continue
+        if _overlaps_any(m.start(), m.end(), hits):
+            continue
+        hits.append(DateHit(
+            start=m.start(), end=m.end(),
+            raw_text=m.group(0),
+            kind="month_year",
+            month=mo_, year=y_,
+            fmt="MONTH_NAME_YEAR",
+            is_birthdate=_is_birthdate_context(text, m.start()),
+        ))
+
+    # 6) Standalone Monatsname mit Kontext ("seit Juli", "im November")
+    for m in RE_STANDALONE_MONTH.finditer(text):
+        mo_name = m.group(1)
+        mo_ = _GERMAN_MONTH_TO_NUM.get(mo_name.lower())
+        if mo_ is None:
+            continue
+        # Nur den Monatsnamen-Bereich ersetzen, nicht das Indikator-Wort
+        mo_start, mo_end = m.start(1), m.end(1)
+        if _overlaps_any(mo_start, mo_end, hits):
+            continue
+        hits.append(DateHit(
+            start=mo_start, end=mo_end,
+            raw_text=mo_name,
+            kind="month_only",
+            month=mo_,
+            year=None,  # ohne Jahr — wird via admission inferiert
+            fmt="MONTH_NAME_ONLY",
+        ))
+
+    # 7) Alleinstehende Jahreszahl
     for m in RE_STANDALONE_YYYY.finditer(text):
         y_ = int(m.group(0))
         if _overlaps_any(m.start(), m.end(), hits):
@@ -331,9 +442,28 @@ def find_admission_date(text: str) -> Optional[date]:
 
     Wenn das erste Datum kein Jahr hat, wird das Jahr vom zweiten Datum
     übernommen (typisches Briefmuster „vom 05.08. bis 21.08.2023").
+    Zusätzlich unterstützt: deutsche Monatsnamen
+    („vom 5. November bis 21. November 2023").
     """
+    # Variante 1: numerisches DD.MM[.YYYY]
     for m in RE_STAY_RANGE.finditer(text):
         d1 = int(m.group(1)); mo1 = int(m.group(2))
+        y1 = m.group(3)
+        y2 = m.group(6)
+        year_str = y1 or y2
+        if not year_str:
+            continue
+        try:
+            return date(int(year_str), mo1, d1)
+        except ValueError:
+            continue
+    # Variante 2: deutsche Monatsnamen
+    for m in RE_STAY_RANGE_GERMAN.finditer(text):
+        d1 = int(m.group(1))
+        mo1_name = m.group(2)
+        mo1 = _GERMAN_MONTH_TO_NUM.get(mo1_name.lower())
+        if mo1 is None:
+            continue
         y1 = m.group(3)
         y2 = m.group(6)
         year_str = y1 or y2
@@ -392,9 +522,15 @@ def shift_month_year(month: int, year: int) -> Tuple[int, int]:
     return shifted.month, shifted.year
 
 
+_RE_GERMAN_DATE_NO_YEAR = re.compile(
+    r'^(\d{1,2})\.\s+(' + _MONTH_NAMES_RE + r')(\.?)$',
+    re.IGNORECASE,
+)
+
+
 def _format_full_date(new_d: date, raw_original: str) -> str:
     """Shifted date im selben Stil wie das Original ausgeben."""
-    # German-named-month?
+    # German-named-month with year? ("5. November 2023")
     m = RE_GERMAN_DATE.match(raw_original)
     if m:
         orig_month_str = m.group(2)
@@ -406,6 +542,19 @@ def _format_full_date(new_d: date, raw_original: str) -> str:
             return f"{new_d.day}. {new_month_name}{dot} {new_d.year}"
         new_month_name = GERMAN_MONTHS_FULL[new_d.month - 1]
         return f"{new_d.day}. {new_month_name} {new_d.year}"
+    # German-named-month WITHOUT year? ("5. November" als erste Hälfte eines
+    # Stay-Range)
+    m = _RE_GERMAN_DATE_NO_YEAR.match(raw_original)
+    if m:
+        orig_month_str = m.group(2)
+        had_dot = m.group(3) == "."
+        is_abbr = orig_month_str.lower() in (mn.lower() for mn in GERMAN_MONTHS_ABBR)
+        if is_abbr:
+            new_month_name = GERMAN_MONTHS_ABBR[new_d.month - 1]
+            dot = "." if had_dot else ""
+            return f"{new_d.day}. {new_month_name}{dot}"
+        new_month_name = GERMAN_MONTHS_FULL[new_d.month - 1]
+        return f"{new_d.day}. {new_month_name}"
     # DD.MM.YYYY oder DD.MM[.] (ohne Jahr) — Original-Format beibehalten
     stripped = raw_original.rstrip(".")  # trailing dot stripped temporarily
     parts = stripped.split(".")
@@ -424,7 +573,7 @@ def _format_full_date(new_d: date, raw_original: str) -> str:
     return new_d.strftime("%d.%m.%Y")
 
 
-def _format_month_year(new_month: int, new_year: int, fmt: str) -> str:
+def _format_month_year(new_month: int, new_year: int, fmt: str, raw_original: str = "") -> str:
     """Shifted Monat/Jahr in das ursprüngliche Format zurück."""
     if fmt == "MM.YYYY":
         return f"{new_month:02d}.{new_year:04d}"
@@ -432,7 +581,40 @@ def _format_month_year(new_month: int, new_year: int, fmt: str) -> str:
         return f"{new_month:02d}/{new_year:04d}"
     if fmt == "MM/YY":
         return f"{new_month:02d}/{new_year % 100:02d}"
+    if fmt == "MONTH_NAME_YEAR":
+        # Beibehalten ob Original abgekürzt war und ob ein Punkt folgte
+        # ("Nov. 2023" vs "November 2023" vs "Nov 2023")
+        is_abbr = False
+        had_dot = False
+        if raw_original:
+            # Extrahiere den Monatsnamen-Teil
+            mo_match = re.match(r'^(\S+?)(\.?)\s+\d{4}$', raw_original)
+            if mo_match:
+                orig_name = mo_match.group(1)
+                had_dot = mo_match.group(2) == "."
+                is_abbr = orig_name.lower() in (mn.lower() for mn in GERMAN_MONTHS_ABBR)
+        new_name = (GERMAN_MONTHS_ABBR[new_month - 1] if is_abbr
+                    else GERMAN_MONTHS_FULL[new_month - 1])
+        dot = "." if (is_abbr and had_dot) else ""
+        return f"{new_name}{dot} {new_year}"
     return f"{new_month:02d}.{new_year:04d}"
+
+
+def _format_month_only(new_month: int, raw_original: str) -> str:
+    """Ersetze einen einzelnen Monatsnamen durch den neuen.
+
+    Beibehält Abkürzung (falls Original abgekürzt war) und Großschreibung.
+    Year wird NICHT ausgegeben — wir wollen das Original-Format "Juli"
+    nicht zu "November 2024" aufblähen.
+    """
+    is_abbr = raw_original.lower() in (mn.lower() for mn in GERMAN_MONTHS_ABBR)
+    new_name = (GERMAN_MONTHS_ABBR[new_month - 1] if is_abbr
+                else GERMAN_MONTHS_FULL[new_month - 1])
+    # Großschreibung übernehmen (im Deutschen sind Monatsnamen
+    # standardmäßig groß; Edge-Case "juli" lowercase nur falls original so)
+    if raw_original and raw_original[0].islower():
+        new_name = new_name[0].lower() + new_name[1:]
+    return new_name
 
 
 # ── Hauptfunktion ─────────────────────────────────────────────────────────────
@@ -441,6 +623,7 @@ def _format_month_year(new_month: int, new_year: int, fmt: str) -> str:
 def plan_actions(
     text: str,
     force_mode: Optional[str] = None,
+    force_admission: Optional[date] = None,
 ) -> Tuple[str, List[DateAction]]:
     """Erkennen + Regel anwenden + Aktion pro Datum berechnen.
 
@@ -451,6 +634,9 @@ def plan_actions(
             der Modus wird dokumentweit bestimmt (siehe
             `decide_document_mode`), damit Seite 2/3 nicht in `no_stay`
             fällt, nur weil dort kein „vom…bis…"-Span steht.
+        force_admission: Aufnahme-Datum aus dem Gesamtdokument. Wird für
+            standalone Monatsnamen ohne Jahr ("seit Juli") benötigt, weil
+            wir dort das Jahr aus dem Aufnahme-Kontext borgen müssen.
 
     Returns:
         (mode, actions) — mode für Logging/Audit, actions zum Anwenden.
@@ -458,7 +644,7 @@ def plan_actions(
     hits = detect_dates(text)
     if force_mode is not None:
         mode = force_mode
-        admission = None  # nicht relevant — wir vertrauen dem Dok-Modus
+        admission = force_admission
     else:
         admission = find_admission_date(text)
         mode = decide_mode(admission, hits)
@@ -515,12 +701,33 @@ def plan_actions(
             ))
         elif h.kind == "month_year":
             new_mo, new_y = shift_month_year(h.month, h.year)
-            new_text = _format_month_year(new_mo, new_y, h.fmt or "MM.YYYY")
+            new_text = _format_month_year(
+                new_mo, new_y, h.fmt or "MM.YYYY", h.raw_text,
+            )
             actions.append(DateAction(
                 start=h.start, end=h.end, raw_text=h.raw_text,
                 do_shift=True, new_text=new_text, color="yellow",
                 tooltip=f"+{SHIFT_MONTHS} Monate",
                 reason="shifted_month_year",
+            ))
+        elif h.kind == "month_only":
+            # Standalone Monatsname ohne Jahr — Jahr aus admission borgen,
+            # nur den Monatsnamen ersetzen.
+            if admission is None:
+                actions.append(DateAction(
+                    start=h.start, end=h.end, raw_text=h.raw_text,
+                    do_shift=False, color="red",
+                    tooltip="Monatsname ohne Jahr — kein Aufenthalt erkannt",
+                    reason="month_only_no_admission",
+                ))
+                continue
+            new_mo, _ = shift_month_year(h.month, admission.year)
+            new_text = _format_month_only(new_mo, h.raw_text)
+            actions.append(DateAction(
+                start=h.start, end=h.end, raw_text=h.raw_text,
+                do_shift=True, new_text=new_text, color="yellow",
+                tooltip=f"+{SHIFT_MONTHS} Monate (Monat ohne Jahr — bitte prüfen)",
+                reason="shifted_month_only",
             ))
 
     logger.info(
