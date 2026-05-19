@@ -625,6 +625,45 @@ class ZoneBasedAnonymizer:
         # second `apply_redactions()` call, because PyMuPDF removes overlapping
         # markup annotations when a redaction is applied.
         highlight_specs = []  # list of (rect, color, tooltip)
+        # Shift specs: redact in phase 1, re-insert text at the EXACT original
+        # baseline in phase 2. Otherwise PyMuPDF vertically centres the
+        # replacement inside the redact rect and Acrobat treats the date as a
+        # new line during text extraction (Ctrl+A → broken row order in Excel).
+        shift_specs = []  # list of dict(origin, fontsize, new_text, redact_rect)
+
+        # Pre-build a span lookup so we can pull the EXACT origin + font size
+        # for each detected date. `get_text("dict")` is the only PyMuPDF API
+        # that exposes the baseline (`span['origin']`) and the original
+        # font size (`span['size']`).
+        span_records = []  # list of (fitz.Rect bbox, origin tuple, size)
+        try:
+            text_dict = page.get_text("dict")
+        except Exception as exc:
+            log.warning("Date-Shift: get_text('dict') failed: %s", exc)
+            text_dict = {"blocks": []}
+        for block in text_dict.get("blocks", []):
+            if block.get("type", 0) != 0:  # 0 == text block
+                continue
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    span_records.append({
+                        "bbox": fitz.Rect(span["bbox"]),
+                        "origin": span.get("origin"),
+                        "size": float(span.get("size", 10.0)),
+                    })
+
+        def _find_span(date_bbox: "fitz.Rect"):
+            """Find the span that best overlaps the date's bbox."""
+            best = None
+            best_area = 0.0
+            for sp in span_records:
+                inter = fitz.Rect(date_bbox) & sp["bbox"]
+                if not inter.is_empty:
+                    area = inter.width * inter.height
+                    if area > best_area:
+                        best_area = area
+                        best = sp
+            return best
 
         for action in actions:
             bbox = self._bbox_for_offsets(action.start, action.end, words, word_ranges)
@@ -636,36 +675,66 @@ class ZoneBasedAnonymizer:
                     continue
                 bbox = fallback[0]
 
-            # Slightly pad so the replacement covers the original text exactly
-            padded = fitz.Rect(bbox.x0 - 1, bbox.y0 - 1, bbox.x1 + 2, bbox.y1 + 1)
-
             if action.do_shift and action.new_text:
-                # Derive the font size from the original character bbox so the
-                # replacement glyph sits on the same baseline as its neighbours.
-                # If we left the default 10pt in place, a brief printed at e.g.
-                # 11pt would land the new text on a slightly different y, and
-                # PDF readers would split the line in two during text
-                # extraction (= Excel rows shift on Ctrl+A copy).
-                # PDF rule of thumb: line_height ≈ 1.2 × fontsize, so
-                #   fontsize ≈ bbox_height / 1.2
-                char_height = max(1.0, bbox.y1 - bbox.y0)
-                est_fontsize = char_height / 1.2
-                # Clamp so a single oddly tall glyph doesn't blow up the size
-                fontsize = max(7.0, min(14.0, est_fontsize))
-                page.add_redact_annot(
-                    padded,
-                    text=action.new_text,
-                    fontname="helv",
-                    fontsize=fontsize,
-                    align=fitz.TEXT_ALIGN_LEFT,
-                    fill=(1, 1, 1),
+                # Find the exact original origin / font size from get_text('dict').
+                # If we have it, we use insert_text() at the original baseline
+                # so the row order survives Ctrl+A in Acrobat/Edge.
+                sp = _find_span(bbox)
+                redact_rect = fitz.Rect(
+                    bbox.x0 - 0.5, bbox.y0 - 0.5,
+                    bbox.x1 + 0.5, bbox.y1 + 0.5,
                 )
+                if sp and sp["origin"]:
+                    # New text starts at the date's left edge but on the span's
+                    # exact baseline → identical y to the neighbours, so PDF
+                    # readers don't split the line.
+                    shift_specs.append({
+                        "origin": (bbox.x0, sp["origin"][1]),
+                        "fontsize": sp["size"],
+                        "new_text": action.new_text,
+                        "redact_rect": redact_rect,
+                    })
+                else:
+                    # Span lookup failed → fall back to the old behaviour
+                    # (add_redact_annot with embedded text).
+                    char_height = max(1.0, bbox.y1 - bbox.y0)
+                    fallback_size = max(7.0, min(14.0, char_height / 1.2))
+                    page.add_redact_annot(
+                        redact_rect,
+                        text=action.new_text,
+                        fontname="helv",
+                        fontsize=fallback_size,
+                        align=fitz.TEXT_ALIGN_LEFT,
+                        fill=(1, 1, 1),
+                    )
                 shifted += 1
 
             highlight_specs.append((bbox, action.color, action.tooltip))
 
-        # Materialise the new dates
+        # Phase 1: erase the OLD date glyphs without an inline replacement.
+        # We add a separate white-fill redact-annot for every shift_spec; the
+        # fallback path already added its own.
+        for spec in shift_specs:
+            page.add_redact_annot(spec["redact_rect"], fill=(1, 1, 1))
+
+        # Apply all redactions
         page.apply_redactions()
+
+        # Phase 2: re-insert the NEW dates at the recorded baseline.
+        for spec in shift_specs:
+            try:
+                page.insert_text(
+                    spec["origin"],
+                    spec["new_text"],
+                    fontsize=spec["fontsize"],
+                    fontname="helv",
+                    color=(0, 0, 0),
+                )
+            except Exception as exc:
+                log.warning(
+                    "Date-Shift: insert_text(%r) failed: %s",
+                    spec["new_text"], exc,
+                )
 
         # Now place the highlights — they survive future operations
         for rect, color, tooltip in highlight_specs:
