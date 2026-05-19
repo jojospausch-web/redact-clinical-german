@@ -365,37 +365,41 @@ class TestGermanMonthNames:
         adm = find_admission_date(text)
         assert adm == date(2023, 11, 5)
 
-    def test_month_year_without_day(self):
-        # Standalone "Januar 2024" should be a month_year hit, shifted +4 months
+    def test_month_year_without_day_is_marked_red_not_shifted(self):
+        # Conservative mode: "Januar 2024" is detected but NOT shifted —
+        # only marked red for manual review. User explicitly requested this
+        # to avoid false positives on bild-/slice-notations like "8/31".
         text = "Diagnose erstmals Januar 2024"
         mode, actions = plan_actions(text, force_mode="shift_safe",
                                      force_admission=date(2024, 1, 5))
         januar = next(a for a in actions if a.raw_text == "Januar 2024")
-        assert januar.do_shift is True
-        assert januar.new_text == "Mai 2024"
+        assert januar.do_shift is False
+        assert januar.color == "red"
 
-    def test_month_year_september_rolls_year(self):
+    def test_month_year_september_is_marked_red(self):
         text = "OP November 2023"
         mode, actions = plan_actions(text, force_mode="shift_safe",
                                      force_admission=date(2023, 8, 5))
         nov = next(a for a in actions if a.raw_text == "November 2023")
-        assert nov.new_text == "März 2024"
+        assert nov.do_shift is False
+        assert nov.color == "red"
 
-    def test_month_year_abbreviated(self):
+    def test_month_year_abbreviated_is_marked_red(self):
         text = "Diagnose Nov. 2023"
         mode, actions = plan_actions(text, force_mode="shift_safe",
                                      force_admission=date(2023, 8, 5))
         nov = next(a for a in actions if a.raw_text == "Nov. 2023")
-        # Abbreviated input → abbreviated output with trailing dot
-        assert nov.new_text == "Mär. 2024"
+        assert nov.do_shift is False
+        assert nov.color == "red"
 
-    def test_standalone_month_with_context(self):
-        # "seit Juli" → +4 months → "seit November" (only the word is replaced)
+    def test_standalone_month_with_context_is_marked_red(self):
+        # Conservative mode: "seit Juli" is detected but NOT shifted —
+        # too risky for false positives (e.g. medication brand names).
         text = "vom 05.08 bis 21.08.2023. Beschwerden seit Juli."
         mode, actions = plan_actions(text)
         juli = next(a for a in actions if a.raw_text == "Juli")
-        assert juli.do_shift is True
-        assert juli.new_text == "November"
+        assert juli.do_shift is False
+        assert juli.color == "red"
 
     def test_standalone_month_without_context_not_matched(self):
         # "Juli Schmidt" — no context indicator → must NOT be matched as month
@@ -422,3 +426,57 @@ class TestGermanMonthNames:
         # Only the full date, not the month-year sub-match
         assert "5. November 2023" in raw
         assert "November 2023" not in raw
+
+
+# ── Regression tests for user-reported bugs ───────────────────────────────────
+
+
+class TestUserReportedBugs:
+    """Concrete cases the user reported in production briefs."""
+
+    def test_ct_slice_notation_8_31_not_shifted(self):
+        # "Slice 8/31" is a CT image reference, not a date.
+        # Under conservative mode it must NOT be shifted — at most red-marked.
+        text = "vom 05.08 bis 21.08.2023 stationaer. Im CT Slice 8/31 zu sehen."
+        mode, actions = plan_actions(text)
+        slice_action = next((a for a in actions if a.raw_text == "8/31"), None)
+        # If detected at all, it must be RED (not shifted, not yellow)
+        if slice_action is not None:
+            assert slice_action.do_shift is False
+            assert slice_action.color == "red"
+
+    def test_stay_range_with_trailing_dot_first_date(self):
+        # User-reported: "vom 20.11. bis 26.11.2024" was only partially shifted
+        # because RE_STAY_RANGE didn't tolerate the trailing dot after the
+        # first DD.MM (between "20.11." and "bis").
+        text = "vom 20.11. bis 26.11.2024 stationaer"
+        adm = find_admission_date(text)
+        assert adm == date(2024, 11, 20)
+        mode, actions = plan_actions(text, force_mode="shift_safe",
+                                     force_admission=adm)
+        shifted = {a.raw_text for a in actions if a.do_shift}
+        # Both dates must be shifted, NOT just the second one
+        assert any("20.11" in d for d in shifted), (
+            f"first date not shifted, got: {[a.raw_text for a in actions]}"
+        )
+        assert any("26.11.2024" in d for d in shifted)
+
+    def test_stay_range_with_dash_separator(self):
+        # Antibiotikum range, often written with "-" instead of "bis"
+        text = "Ampicillin 20.11. - 26.11.2024 angesetzt"
+        adm = find_admission_date(text)
+        assert adm == date(2024, 11, 20)
+        mode, actions = plan_actions(text, force_mode="shift_safe",
+                                     force_admission=adm)
+        shifted = {a.raw_text for a in actions if a.do_shift}
+        assert any("20.11" in d for d in shifted)
+        assert any("26.11.2024" in d for d in shifted)
+
+    def test_stay_range_without_vom_or_zwischen(self):
+        # "vom" / "zwischen" optional — bare "20.11.2024 - 26.11.2024" works
+        text = "Antibiose 20.11.2024 - 26.11.2024"
+        mode, actions = plan_actions(text, force_mode="shift_safe",
+                                     force_admission=date(2024, 11, 20))
+        shifted = {a.raw_text for a in actions if a.do_shift}
+        assert "20.11.2024" in shifted
+        assert "26.11.2024" in shifted

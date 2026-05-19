@@ -67,12 +67,19 @@ RE_GERMAN_DATE = re.compile(
     re.IGNORECASE,
 )
 
-# Aufenthalts-Range "vom DD.MM[.YYYY] bis (zum)? DD.MM[.YYYY]" /
-# "zwischen DD.MM[.YYYY] und DD.MM[.YYYY]"
+# Aufenthalts-Range / Behandlungs-Zeitraum mit numerischen Daten.
+# Akzeptiert mehrere Trenner-Varianten:
+#   - "vom 05.08 bis zum 21.08.2023"   (klassisch mit "vom" + "bis")
+#   - "vom 20.11. bis 26.11.2024"      (trailing dot nach erstem Datum)
+#   - "20.11. - 26.11.2024"            (Bindestrich statt "bis", ohne "vom")
+#   - "20.11.2024 – 26.11.2024"        (Halbgeviertstrich)
+#   - "zwischen 05.08.2023 und 21.08.2023"
+# "vom" / "zwischen" ist OPTIONAL — Antibiotika-Ranges schreiben oft
+# nur "20.11. - 26.11.2024" ohne Einleitung.
 RE_STAY_RANGE = re.compile(
-    r'\b(?:vom|zwischen)\s+'
-    r'(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\s+'
-    r'(?:bis(?:\s+zum)?|und)\s+'
+    r'(?:\b(?:vom|zwischen)\s+)?'
+    r'(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\.?\s*'    # optional trailing dot + flex whitespace
+    r'(?:bis(?:\s+zum)?|und|-|–|—)\s*'             # bis / und / Bindestrich / Halbgeviertstrich
     r'(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\b',
     re.IGNORECASE,
 )
@@ -689,8 +696,15 @@ def plan_actions(
         if h.kind == "standalone_yyyy":
             continue
 
-        # Geshiftete Daten → neuen Text berechnen, gelb markieren
-        if h.kind in ("full", "german"):
+        # KONSERVATIVER MODUS:
+        # Nur DD.MM[.YYYY] (numerisches Voll-/Stay-Range-Datum) wird tatsächlich
+        # GESHIFTET — alles andere (deutsche Monatsnamen "5. November 2023",
+        # MM.YYYY, MM/YYYY, MM/YY, "Januar 2024", "seit Juli", ...) wird nur
+        # ROT markiert. Begründung: bei ausgeschriebenen Formaten / Kurz-
+        # formaten ist die Reading-Order-Korrektur unzuverlässig und das
+        # Risiko von False-Positives (z. B. "8/31" CT-Bildnummer) zu groß.
+        # Der User markiert den Rest manuell.
+        if h.kind == "full":
             new_d = shift_full_date(h.parsed)
             new_text = _format_full_date(new_d, h.raw_text)
             actions.append(DateAction(
@@ -699,37 +713,38 @@ def plan_actions(
                 tooltip=f"+{SHIFT_DAYS} Tage",
                 reason="shifted_full",
             ))
-        elif h.kind == "month_year":
-            new_mo, new_y = shift_month_year(h.month, h.year)
-            new_text = _format_month_year(
-                new_mo, new_y, h.fmt or "MM.YYYY", h.raw_text,
-            )
+        elif h.kind == "german":
+            # "5. November 2023" — NICHT shiften, nur markieren
             actions.append(DateAction(
                 start=h.start, end=h.end, raw_text=h.raw_text,
-                do_shift=True, new_text=new_text, color="yellow",
-                tooltip=f"+{SHIFT_MONTHS} Monate",
-                reason="shifted_month_year",
+                do_shift=False, color="red",
+                tooltip="Ausgeschriebenes Datum — bitte manuell prüfen",
+                reason="german_date_not_shifted",
+            ))
+        elif h.kind == "month_year":
+            # MM.YYYY, MM/YYYY, MM/YY, "Januar 2024" — NICHT shiften
+            actions.append(DateAction(
+                start=h.start, end=h.end, raw_text=h.raw_text,
+                do_shift=False, color="red",
+                tooltip="Monat/Jahr-Format — bitte manuell prüfen",
+                reason="month_year_not_shifted",
             ))
         elif h.kind == "month_only":
-            # Standalone Monatsname ohne Jahr — Jahr aus admission borgen,
-            # nur den Monatsnamen ersetzen.
-            if admission is None:
-                actions.append(DateAction(
-                    start=h.start, end=h.end, raw_text=h.raw_text,
-                    do_shift=False, color="red",
-                    tooltip="Monatsname ohne Jahr — kein Aufenthalt erkannt",
-                    reason="month_only_no_admission",
-                ))
-                continue
-            new_mo, _ = shift_month_year(h.month, admission.year)
-            new_text = _format_month_only(new_mo, h.raw_text)
+            # Standalone Monatsname — NICHT shiften
             actions.append(DateAction(
                 start=h.start, end=h.end, raw_text=h.raw_text,
-                do_shift=True, new_text=new_text, color="yellow",
-                tooltip=f"+{SHIFT_MONTHS} Monate (Monat ohne Jahr — bitte prüfen)",
-                reason="shifted_month_only",
+                do_shift=False, color="red",
+                tooltip="Monatsname ohne Jahr — bitte manuell prüfen",
+                reason="month_only_not_shifted",
             ))
-
+        else:
+            # Fallback für unbekannte kinds — fail-safe als rot markieren
+            actions.append(DateAction(
+                start=h.start, end=h.end, raw_text=h.raw_text,
+                do_shift=False, color="red",
+                tooltip="Datums-ähnlich — bitte manuell prüfen",
+                reason="unknown_kind",
+            ))
     logger.info(
         "Date-Shift Modus=%s | Aufnahme=%s | erkannte Daten=%d | Aktionen=%d",
         mode, admission, len(hits), len(actions),
