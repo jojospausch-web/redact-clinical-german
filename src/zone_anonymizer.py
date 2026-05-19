@@ -63,12 +63,13 @@ class ZoneBasedAnonymizer:
         # Sonst würde Seite 2+ ohne „vom…bis…"-Span automatisch in
         # `no_stay` fallen (rot statt geshiftet).
         doc_date_mode: Optional[str] = None
+        doc_date_admission = None
         if self.date_shift_enabled:
             full_text = "\n".join(p.get_text() for p in doc)
-            doc_date_mode, admission = decide_document_mode(full_text)
+            doc_date_mode, doc_date_admission = decide_document_mode(full_text)
             logging.getLogger(__name__).info(
                 "Date-Shift Dokument-Modus: %s (Aufnahme=%s)",
-                doc_date_mode, admission,
+                doc_date_mode, doc_date_admission,
             )
             stats['date_shifter_mode'] = doc_date_mode
 
@@ -144,7 +145,11 @@ class ZoneBasedAnonymizer:
             #    `apply_redactions()` a second time to materialise the new
             #    date text into the PDF stream.
             if self.date_shift_enabled:
-                ds_stats = self._apply_date_shift(page, doc_mode=doc_date_mode)
+                ds_stats = self._apply_date_shift(
+                    page,
+                    doc_mode=doc_date_mode,
+                    doc_admission=doc_date_admission,
+                )
                 stats['date_shifter'] = stats.get('date_shifter', [])
                 stats['date_shifter'].append({
                     'page': page_num + 1,
@@ -566,6 +571,7 @@ class ZoneBasedAnonymizer:
         self,
         page: fitz.Page,
         doc_mode: Optional[str] = None,
+        doc_admission=None,
     ) -> dict:
         """Run the rule-based date-shifter on the (already-PII-redacted) page.
 
@@ -577,6 +583,9 @@ class ZoneBasedAnonymizer:
                 „vom…bis…"-span usually only lives on page 1, but every
                 page needs the same shift rule for the document to remain
                 temporally consistent.
+            doc_admission: The admission date from the document-wide pass.
+                Needed for standalone month names without a year ("seit
+                Juli") — we borrow the admission's year there.
 
         Flow:
         1. Re-extract words from the page (PII text has already been removed
@@ -602,7 +611,11 @@ class ZoneBasedAnonymizer:
             return {"mode": "no_text", "shifted": 0, "marked_red": 0, "marked_yellow": 0}
 
         joined_text, word_ranges = self._build_text_with_offsets(words)
-        mode, actions = plan_actions(joined_text, force_mode=doc_mode)
+        mode, actions = plan_actions(
+            joined_text,
+            force_mode=doc_mode,
+            force_admission=doc_admission,
+        )
 
         shifted = 0
         marked_red = 0
@@ -627,15 +640,23 @@ class ZoneBasedAnonymizer:
             padded = fitz.Rect(bbox.x0 - 1, bbox.y0 - 1, bbox.x1 + 2, bbox.y1 + 1)
 
             if action.do_shift and action.new_text:
-                # Replace text in-place. PyMuPDF picks a default font; this
-                # is rendered visually as Helvetica which may differ slightly
-                # from the original — by design, since exact font matching
-                # would require per-span font resolution (out of scope).
+                # Derive the font size from the original character bbox so the
+                # replacement glyph sits on the same baseline as its neighbours.
+                # If we left the default 10pt in place, a brief printed at e.g.
+                # 11pt would land the new text on a slightly different y, and
+                # PDF readers would split the line in two during text
+                # extraction (= Excel rows shift on Ctrl+A copy).
+                # PDF rule of thumb: line_height ≈ 1.2 × fontsize, so
+                #   fontsize ≈ bbox_height / 1.2
+                char_height = max(1.0, bbox.y1 - bbox.y0)
+                est_fontsize = char_height / 1.2
+                # Clamp so a single oddly tall glyph doesn't blow up the size
+                fontsize = max(7.0, min(14.0, est_fontsize))
                 page.add_redact_annot(
                     padded,
                     text=action.new_text,
                     fontname="helv",
-                    fontsize=10,
+                    fontsize=fontsize,
                     align=fitz.TEXT_ALIGN_LEFT,
                     fill=(1, 1, 1),
                 )

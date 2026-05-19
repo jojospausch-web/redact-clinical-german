@@ -332,3 +332,93 @@ class TestDocumentMode:
         mode, actions = plan_actions(page1, force_mode="monthend")
         assert mode == "monthend"
         assert all(a.do_shift is False and a.color == "red" for a in actions)
+
+
+# ── German month names — extended patterns ────────────────────────────────────
+
+
+class TestGermanMonthNames:
+    """Coverage for the patterns added in the 'd' feature batch:
+    - Stay-range with German month names
+    - "Monat YYYY" without day
+    - Standalone month name with context indicator
+    """
+
+    def test_stay_range_with_german_month_names(self):
+        text = "vom 5. November bis 21. November 2023 behandelt."
+        adm = find_admission_date(text)
+        assert adm == date(2023, 11, 5)
+
+    def test_stay_range_german_first_date_inherits_year(self):
+        # First date has no year ("5. November"), should be parsed using
+        # year from second date.
+        text = "vom 5. November bis 21. November 2023"
+        mode, actions = plan_actions(text)
+        raw = {a.raw_text for a in actions}
+        # Both dates must be detected
+        assert "5. November" in raw
+        assert "21. November 2023" in raw
+
+    def test_stay_range_german_full_pattern(self):
+        # Both dates with year
+        text = "zwischen 5. November 2023 und 21. November 2023"
+        adm = find_admission_date(text)
+        assert adm == date(2023, 11, 5)
+
+    def test_month_year_without_day(self):
+        # Standalone "Januar 2024" should be a month_year hit, shifted +4 months
+        text = "Diagnose erstmals Januar 2024"
+        mode, actions = plan_actions(text, force_mode="shift_safe",
+                                     force_admission=date(2024, 1, 5))
+        januar = next(a for a in actions if a.raw_text == "Januar 2024")
+        assert januar.do_shift is True
+        assert januar.new_text == "Mai 2024"
+
+    def test_month_year_september_rolls_year(self):
+        text = "OP November 2023"
+        mode, actions = plan_actions(text, force_mode="shift_safe",
+                                     force_admission=date(2023, 8, 5))
+        nov = next(a for a in actions if a.raw_text == "November 2023")
+        assert nov.new_text == "März 2024"
+
+    def test_month_year_abbreviated(self):
+        text = "Diagnose Nov. 2023"
+        mode, actions = plan_actions(text, force_mode="shift_safe",
+                                     force_admission=date(2023, 8, 5))
+        nov = next(a for a in actions if a.raw_text == "Nov. 2023")
+        # Abbreviated input → abbreviated output with trailing dot
+        assert nov.new_text == "Mär. 2024"
+
+    def test_standalone_month_with_context(self):
+        # "seit Juli" → +4 months → "seit November" (only the word is replaced)
+        text = "vom 05.08 bis 21.08.2023. Beschwerden seit Juli."
+        mode, actions = plan_actions(text)
+        juli = next(a for a in actions if a.raw_text == "Juli")
+        assert juli.do_shift is True
+        assert juli.new_text == "November"
+
+    def test_standalone_month_without_context_not_matched(self):
+        # "Juli Schmidt" — no context indicator → must NOT be matched as month
+        text = "vom 05.08 bis 21.08.2023. Schwester Juli Schmidt war anwesend."
+        mode, actions = plan_actions(text)
+        raw = [a.raw_text for a in actions]
+        assert "Juli" not in raw
+
+    def test_standalone_month_without_admission_is_red(self):
+        # No 'vom...bis...' → no admission → standalone month can't borrow year
+        text = "Beschwerden seit Juli, OP im November"
+        mode, actions = plan_actions(text)
+        # mode is no_stay → everything red
+        for a in actions:
+            assert a.color == "red"
+            assert a.do_shift is False
+
+    def test_full_german_date_no_overlap_with_month_year(self):
+        # "5. November 2023" should NOT also surface as "November 2023" (month_year)
+        text = "Termin 5. November 2023"
+        mode, actions = plan_actions(text, force_mode="shift_safe",
+                                     force_admission=date(2023, 9, 5))
+        raw = [a.raw_text for a in actions]
+        # Only the full date, not the month-year sub-match
+        assert "5. November 2023" in raw
+        assert "November 2023" not in raw
