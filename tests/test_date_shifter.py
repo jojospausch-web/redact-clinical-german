@@ -14,6 +14,7 @@ from src.date_shifter import (
     DateHit,
     SHIFT_DAYS,
     SHIFT_MONTHS,
+    decide_document_mode,
     decide_mode,
     detect_dates,
     find_admission_date,
@@ -287,4 +288,47 @@ class TestPlanActionsIntegration:
         text = "Aufnahme 05.08.2023, Entlassung 21.08.2023"  # no "vom...bis..."
         mode, actions = plan_actions(text)
         assert mode == "no_stay"
+        assert all(a.do_shift is False and a.color == "red" for a in actions)
+
+
+# ── decide_document_mode + force_mode ────────────────────────────────────────
+
+
+class TestDocumentMode:
+    """The 'vom…bis…' span often lives only on page 1. We must compute the
+    mode over the whole document and force it on every page — otherwise
+    pages 2+ fall into 'no_stay' and stay unshifted (the TAVI-Arztbrief bug).
+    """
+
+    def test_document_mode_uses_full_text(self):
+        full_doc = (
+            "Page1: vom 05.08 bis zum 21.08.2023 stationär.\n"
+            "Page3: Herzkatheterbefund vom 16.08.2023.\n"
+        )
+        mode, admission = decide_document_mode(full_doc)
+        assert mode == "shift_safe"
+        assert admission == date(2023, 8, 5)
+
+    def test_force_mode_overrides_per_page_decision(self):
+        # Page 3 in isolation has no vom-bis → would otherwise be 'no_stay'
+        page3 = "Herzkatheterbefund vom 16.08.2023:\nEchokardiographie vom 17.08.2023:"
+        # Without force: no_stay, red
+        mode, actions = plan_actions(page3)
+        assert mode == "no_stay"
+        assert all(a.color == "red" for a in actions)
+        # With force_mode='shift_safe': shifted, yellow
+        mode, actions = plan_actions(page3, force_mode="shift_safe")
+        assert mode == "shift_safe"
+        assert all(a.do_shift is True and a.color == "yellow" for a in actions)
+        # And the shifts are exact +120 days
+        shifted = {a.raw_text: a.new_text for a in actions}
+        assert shifted["16.08.2023"] == "14.12.2023"
+        assert shifted["17.08.2023"] == "15.12.2023"
+
+    def test_force_mode_monthend_blocks_shift(self):
+        # If document mode says monthend, even a page 1 with a valid date
+        # gets red marks (admission was 27.-31. somewhere)
+        page1 = "Termin am 12.06.2023"
+        mode, actions = plan_actions(page1, force_mode="monthend")
+        assert mode == "monthend"
         assert all(a.do_shift is False and a.color == "red" for a in actions)

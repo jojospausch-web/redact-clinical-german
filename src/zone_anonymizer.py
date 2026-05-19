@@ -9,7 +9,7 @@ import logging
 from src.config import ZoneConfig, AnonymizationTemplate, PIIEntity
 from src.pii_extractor import StructuredPIIExtractor
 from src.image_extractor import ImageExtractor
-from src.date_shifter import DateAction, plan_actions
+from src.date_shifter import DateAction, decide_document_mode, plan_actions
 
 
 class ZoneBasedAnonymizer:
@@ -58,7 +58,20 @@ class ZoneBasedAnonymizer:
             'pii_entities_found': 0,
             'images_extracted': 0
         }
-        
+
+        # Date-Shift: Modus EINMAL über das gesamte Dokument bestimmen.
+        # Sonst würde Seite 2+ ohne „vom…bis…"-Span automatisch in
+        # `no_stay` fallen (rot statt geshiftet).
+        doc_date_mode: Optional[str] = None
+        if self.date_shift_enabled:
+            full_text = "\n".join(p.get_text() for p in doc)
+            doc_date_mode, admission = decide_document_mode(full_text)
+            logging.getLogger(__name__).info(
+                "Date-Shift Dokument-Modus: %s (Aufnahme=%s)",
+                doc_date_mode, admission,
+            )
+            stats['date_shifter_mode'] = doc_date_mode
+
         # Process each page
         cut_off_page = None
 
@@ -131,7 +144,7 @@ class ZoneBasedAnonymizer:
             #    `apply_redactions()` a second time to materialise the new
             #    date text into the PDF stream.
             if self.date_shift_enabled:
-                ds_stats = self._apply_date_shift(page)
+                ds_stats = self._apply_date_shift(page, doc_mode=doc_date_mode)
                 stats['date_shifter'] = stats.get('date_shifter', [])
                 stats['date_shifter'].append({
                     'page': page_num + 1,
@@ -549,14 +562,27 @@ class ZoneBasedAnonymizer:
                 fill=(0, 0, 0),
             )
 
-    def _apply_date_shift(self, page: fitz.Page) -> dict:
+    def _apply_date_shift(
+        self,
+        page: fitz.Page,
+        doc_mode: Optional[str] = None,
+    ) -> dict:
         """Run the rule-based date-shifter on the (already-PII-redacted) page.
+
+        Args:
+            page: PDF page object
+            doc_mode: Pre-computed document-wide mode (see
+                `date_shifter.decide_document_mode`). When given, the
+                per-page mode decision is bypassed — important because the
+                „vom…bis…"-span usually only lives on page 1, but every
+                page needs the same shift rule for the document to remain
+                temporally consistent.
 
         Flow:
         1. Re-extract words from the page (PII text has already been removed
            by `apply_redactions()`, so we won't see redacted birthdates here).
         2. Ask `date_shifter.plan_actions` for one DateAction per detected
-           date.
+           date, forcing the document mode.
         3. For each action:
            - `do_shift=True`: add a redact-annot with the new text; PyMuPDF
              will replace the original date on the next `apply_redactions()`.
@@ -576,7 +602,7 @@ class ZoneBasedAnonymizer:
             return {"mode": "no_text", "shifted": 0, "marked_red": 0, "marked_yellow": 0}
 
         joined_text, word_ranges = self._build_text_with_offsets(words)
-        mode, actions = plan_actions(joined_text)
+        mode, actions = plan_actions(joined_text, force_mode=doc_mode)
 
         shifted = 0
         marked_red = 0
