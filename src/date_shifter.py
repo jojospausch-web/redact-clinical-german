@@ -361,6 +361,23 @@ def decide_mode(admission: Optional[date], hits: List[DateHit]) -> str:
     return "shift_safe"
 
 
+def decide_document_mode(full_text: str) -> Tuple[str, Optional[date]]:
+    """Bestimme den Modus über den GESAMTEN Brief (alle Seiten zusammen).
+
+    Der „vom…bis…"-Span steht typischerweise nur auf Seite 1, das Year-Leak
+    kann aber auf jeder Seite stehen. Mode-Entscheidung pro Seite würde
+    Seite 2/3 in `no_stay` zwingen, obwohl der ganze Brief eigentlich
+    `shift_safe` ist. Deshalb diese dokumentweite Variante.
+
+    Returns:
+        (mode, admission_date) — `admission_date` kann zum Debuggen / für
+        Audit-Logs nützlich sein.
+    """
+    admission = find_admission_date(full_text)
+    hits = detect_dates(full_text)
+    return decide_mode(admission, hits), admission
+
+
 # ── Shift- und Formatier-Helfer ───────────────────────────────────────────────
 
 
@@ -421,18 +438,30 @@ def _format_month_year(new_month: int, new_year: int, fmt: str) -> str:
 # ── Hauptfunktion ─────────────────────────────────────────────────────────────
 
 
-def plan_actions(text: str) -> Tuple[str, List[DateAction]]:
+def plan_actions(
+    text: str,
+    force_mode: Optional[str] = None,
+) -> Tuple[str, List[DateAction]]:
     """Erkennen + Regel anwenden + Aktion pro Datum berechnen.
 
     Args:
         text: Der bereits zu Wörtern normalisierte Seitentext.
+        force_mode: Wenn gesetzt, wird dieser Modus statt der eigenen
+            Regelauswertung übernommen. Wichtig für mehrseitige Briefe:
+            der Modus wird dokumentweit bestimmt (siehe
+            `decide_document_mode`), damit Seite 2/3 nicht in `no_stay`
+            fällt, nur weil dort kein „vom…bis…"-Span steht.
 
     Returns:
         (mode, actions) — mode für Logging/Audit, actions zum Anwenden.
     """
     hits = detect_dates(text)
-    admission = find_admission_date(text)
-    mode = decide_mode(admission, hits)
+    if force_mode is not None:
+        mode = force_mode
+        admission = None  # nicht relevant — wir vertrauen dem Dok-Modus
+    else:
+        admission = find_admission_date(text)
+        mode = decide_mode(admission, hits)
 
     actions: List[DateAction] = []
 
