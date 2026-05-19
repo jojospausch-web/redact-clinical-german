@@ -9,21 +9,27 @@ import logging
 from src.config import ZoneConfig, AnonymizationTemplate, PIIEntity
 from src.pii_extractor import StructuredPIIExtractor
 from src.image_extractor import ImageExtractor
+from src.date_shifter import DateAction, plan_actions
 
 
 class ZoneBasedAnonymizer:
     """Anonymizes PDFs using zone-based approach with structured PII extraction."""
-    
+
     def __init__(
         self,
-        template: AnonymizationTemplate
+        template: AnonymizationTemplate,
+        date_shift_enabled: bool = False,
     ):
         """Initialize the anonymizer.
-        
+
         Args:
             template: Anonymization template with rules
+            date_shift_enabled: When True, run the rule-based date shifter
+                after PII redaction. Shifted dates get a yellow highlight,
+                non-shifted dates a red highlight (see src/date_shifter.py).
         """
         self.template = template
+        self.date_shift_enabled = date_shift_enabled
         # Pass whitelist to the PII extractor
         whitelist = template.whitelist if hasattr(template, 'whitelist') else None
         self.pii_extractor = StructuredPIIExtractor(template.structured_patterns, whitelist)
@@ -114,8 +120,23 @@ class ZoneBasedAnonymizer:
             # 5. Redact exact blacklist entries (case-sensitive, whole-word)
             self._redact_blacklist_exact(page, joined_text)
 
-            # Apply redactions per page
+            # Apply redactions per page (zone / PII / blacklist)
             page.apply_redactions()
+
+            # 6. Optional date-shifting pass — runs AFTER the redaction pass so
+            #    that already-redacted text (e.g. birthdate inside the patient
+            #    block) is not touched again. The shifter applies its own
+            #    `add_redact_annot(..., text=new_date)` for shifted dates and
+            #    adds yellow/red highlight annotations as marks. We then call
+            #    `apply_redactions()` a second time to materialise the new
+            #    date text into the PDF stream.
+            if self.date_shift_enabled:
+                ds_stats = self._apply_date_shift(page)
+                stats['date_shifter'] = stats.get('date_shifter', [])
+                stats['date_shifter'].append({
+                    'page': page_num + 1,
+                    **ds_stats,
+                })
         
         # Extract images if requested. We keep the in-memory PIL images so the
         # caller (main.py) can run image anonymisation on the same objects
@@ -527,6 +548,121 @@ class ZoneBasedAnonymizer:
                 fitz.Rect(area.x0 - 1, area.y0 - 1, area.x1 + 2, area.y1 + 1),
                 fill=(0, 0, 0),
             )
+
+    def _apply_date_shift(self, page: fitz.Page) -> dict:
+        """Run the rule-based date-shifter on the (already-PII-redacted) page.
+
+        Flow:
+        1. Re-extract words from the page (PII text has already been removed
+           by `apply_redactions()`, so we won't see redacted birthdates here).
+        2. Ask `date_shifter.plan_actions` for one DateAction per detected
+           date.
+        3. For each action:
+           - `do_shift=True`: add a redact-annot with the new text; PyMuPDF
+             will replace the original date on the next `apply_redactions()`.
+           - `do_shift=False`: leave the text alone — only mark.
+           - In both cases add a yellow or red highlight annotation on top
+             of the original bbox.
+        4. Call `apply_redactions()` once more to materialise the new dates.
+           Highlights survive this call because PyMuPDF's redact pass only
+           touches text/images, not markup annotations.
+
+        Returns:
+            A small statistics dict for the page (mode, counts).
+        """
+        log = logging.getLogger(__name__)
+        words = page.get_text("words")
+        if not words:
+            return {"mode": "no_text", "shifted": 0, "marked_red": 0, "marked_yellow": 0}
+
+        joined_text, word_ranges = self._build_text_with_offsets(words)
+        mode, actions = plan_actions(joined_text)
+
+        shifted = 0
+        marked_red = 0
+        marked_yellow = 0
+
+        # We collect highlight specs and add the annotations only AFTER the
+        # second `apply_redactions()` call, because PyMuPDF removes overlapping
+        # markup annotations when a redaction is applied.
+        highlight_specs = []  # list of (rect, color, tooltip)
+
+        for action in actions:
+            bbox = self._bbox_for_offsets(action.start, action.end, words, word_ranges)
+            if bbox is None:
+                # Fallback: try to find the literal date text on the page
+                fallback = page.search_for(action.raw_text)
+                if not fallback:
+                    log.debug("Date-Shift: bbox for '%s' not found, skipping", action.raw_text)
+                    continue
+                bbox = fallback[0]
+
+            # Slightly pad so the replacement covers the original text exactly
+            padded = fitz.Rect(bbox.x0 - 1, bbox.y0 - 1, bbox.x1 + 2, bbox.y1 + 1)
+
+            if action.do_shift and action.new_text:
+                # Replace text in-place. PyMuPDF picks a default font; this
+                # is rendered visually as Helvetica which may differ slightly
+                # from the original — by design, since exact font matching
+                # would require per-span font resolution (out of scope).
+                page.add_redact_annot(
+                    padded,
+                    text=action.new_text,
+                    fontname="helv",
+                    fontsize=10,
+                    align=fitz.TEXT_ALIGN_LEFT,
+                    fill=(1, 1, 1),
+                )
+                shifted += 1
+
+            highlight_specs.append((bbox, action.color, action.tooltip))
+
+        # Materialise the new dates
+        page.apply_redactions()
+
+        # Now place the highlights — they survive future operations
+        for rect, color, tooltip in highlight_specs:
+            try:
+                annot = page.add_highlight_annot(rect)
+                if color == "red":
+                    annot.set_colors(stroke=(1.0, 0.0, 0.0))
+                    marked_red += 1
+                else:
+                    # Default highlight is yellow
+                    marked_yellow += 1
+                if tooltip:
+                    annot.set_info(content=tooltip)
+                annot.update()
+            except Exception as exc:
+                log.warning("Date-Shift: could not place highlight: %s", exc)
+
+        log.info(
+            "Date-Shift page: mode=%s shifted=%d red=%d yellow=%d",
+            mode, shifted, marked_red, marked_yellow,
+        )
+        return {
+            "mode": mode,
+            "shifted": shifted,
+            "marked_red": marked_red,
+            "marked_yellow": marked_yellow,
+        }
+
+    @staticmethod
+    def _bbox_for_offsets(
+        start: int,
+        end: int,
+        words: list,
+        word_ranges: list,
+    ) -> Optional["fitz.Rect"]:
+        """Compute the union bbox of all words overlapping `[start, end)`."""
+        overlapping = [wr for wr in word_ranges if wr[1] > start and wr[0] < end]
+        if not overlapping:
+            return None
+        x0 = min(words[wr[2]][0] for wr in overlapping)
+        y0 = min(words[wr[2]][1] for wr in overlapping)
+        x1 = max(words[wr[2]][2] for wr in overlapping)
+        y1 = max(words[wr[2]][3] for wr in overlapping)
+        return fitz.Rect(x0, y0, x1, y1)
 
     def _check_cutoff_trigger(self, page: fitz.Page, page_num: int) -> Optional[int]:
         """Check if the cut-off trigger keyword is on this page and redact below it.
